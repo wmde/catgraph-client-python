@@ -1,7 +1,6 @@
 <?php
-define( 'GP_LINEBREAK', "\r\n" );
+define( 'GP_LINEBREAK', "\n" );
 define( 'GP_PORT', 6699 );
-define( 'GP_CAPTURE', -23 ); //NASTY HACK. but gp doesn't support negative ids, so...
 
 class gpException extends Exception {
 	function __construct( $msg ) {
@@ -10,9 +9,12 @@ class gpException extends Exception {
 }
 
 class gpProcessorException extends gpException {
-	function __construct( $status, $msg ) {
+	function __construct( $status, $msg, $command ) {
+		if ( $command ) $msg .= " (command was `$command`)";
+		
 		gpException::__construct( $msg );
 		
+		$this->command = $command;
 		$this->status = $status;
 	}
 }
@@ -36,7 +38,11 @@ class gpNullSource extends gpDataSource {
 	public function nextRow() {
 		return null;
 	}
+	
+	static $instance;
 }
+
+gpNullSource::$instance = new gpNullSource();
 
 class gpArraySource extends gpDataSource {
 	var $data;
@@ -115,7 +121,11 @@ class gpNullSink extends gpDataSink {
 	public function putRow( $row ) {
 		// noop
 	}
+	
+	static $instance;
 }
+
+gpNullSink::$instance = new gpNullSink();
 
 class gpArraySink extends gpDataSink {
 	var $data;
@@ -182,9 +192,10 @@ abstract class gpConnection {
 	protected $tainted = false;
 	protected $closed = false;
 	protected $status = null;
+	protected $response = null;
 
 	public $debug = false;
-
+	
 	public abstract function connect();
 	public abstract function close(); //FIXME: set $closed! //FIXME: close on quit/shutdown
 	
@@ -217,11 +228,18 @@ abstract class gpConnection {
 		$cmd = str_replace( '_', '-', $name);
 		$cmd = preg_replace( '/^-*|-*$/', '', $cmd);
 		
-		$command = array( $cmd );
-		
-		$capture = false;
 		$source = null;
 		$sink = null;
+
+		if ( preg_match( '/^capture-/', $cmd ) ) {
+			$cmd = substr( $cmd, 8 );
+			$sink = new gpArraySink();
+			$capture = true;
+		} else { 		
+			$capture = false;
+		}
+		
+		$command = array( $cmd );
 		
 		foreach ( $arguments as $arg ) {
 			if ( is_array( $arg ) ) {
@@ -230,9 +248,6 @@ abstract class gpConnection {
 				if ( $arg instanceof gpDataSource ) $source = $arg;
 				else if ( $arg instanceof gpDataSink ) $sink = $arg;
 				else throw new Exception( "arguments must be primitive or a gpDataSource or qpDataSink. Found " . get_class($arg) );
-			} else if ( $arg === GP_CAPTURE ) {
-				$sink = new gpArraySink();
-				$capture = true;
 			} else if ( $arg === null || $arg === false ) {
 				continue;
 			} else if ( is_string($arg) || is_int($arg) ) {
@@ -256,6 +271,12 @@ abstract class gpConnection {
 			$row = array( substr($s, 1) );
 		} else {
 			$row = preg_split( '/ *[;,\t] */', $s );
+			
+			foreach ( $row as $i => $v ) {
+				if ( preg_match('/^\d+$/', $v) ) {
+					$row[$i] = (int) $v;
+				}
+			}
 		}
 		
 		return $row;
@@ -299,16 +320,29 @@ abstract class gpConnection {
 			$command = implode( ' ', $command );
 		}
 		
-		fputs( $this->hout, trim($command) . "\n" ); #FIXME: "\r\n"???
+		$command = trim($command);
+		
+		if ( $source && !preg_match('/:$/', $command) ) {
+			$command .= ':';
+		}
+		
+		if ( !$source && preg_match('/:$/', $command) ) {
+			$source = gpNullSource::$instance;
+		}
+		
+		fputs( $this->hout, $command . "\n" ); #FIXME: "\r\n"???
 		fflush( $this->hout );
 		
-		if ( $source ) $this->copyFromSource( $source );
+		if ( $source ) {
+			$this->copyFromSource( $source );
+		}
 		
 		$re = fgets( $this->hin, 1024 ); //FIXME: what if response is too long?
 		
 		if ( $re === '' || $re === false || $re === null ) {
 			$this->tainted = true;
 			$this->status = null;
+			$this->response = null;
 			
 			$this->trace(__METHOD__, "peer did not respond! Got value " . var_export($re, true));
 			$this->checkPeer();
@@ -319,8 +353,8 @@ abstract class gpConnection {
 		$re = trim($re);
 		$this->trace(__METHOD__, "response", $re);
 
-		$this->status = $re;
-		
+		$this->response = $re;
+			
 		preg_match( '/^([a-zA-Z]+)[.:!](.*)$/', $re, $m );
 		if ( empty( $m[1] ) ) {
 			$this->tainted = true;
@@ -328,19 +362,26 @@ abstract class gpConnection {
 			throw new gpProtocolException("response should begin with status string like `OK`. Found: `$re`");
 		}
 		
-		if ( $m[1] != 'OK' ) throw new gpProcessorException( $m[1], $m[2] );
-
+		$this->status = $m[1];
+		
+		if ( $this->status != 'OK' && $this->status != 'NONE' ) {
+			throw new gpProcessorException( $this->status, $m[2], $command );
+		}
+		
 		preg_match( '/.*([.:]) *$/', $re, $m );
 		if ( empty( $m[1] ) ) throw new gpProtocolException("response should end with `.` or `:`. Found: `$re`");
 		
-		if ( $m[1] == ':' ) $this->copyToSink( $sink );
+		if ( $m[1] == ':' ) {
+			if ( !$sink ) $sink = gpNullSink::$instance;
+			$this->copyToSink( $sink );
+		}
 		
 		if ( feof( $this->hin ) ) { // closed by peer
 			$this->trace(__METHOD__, "connection closed by peer, closing our side too.");
 			$this->close();
 		}
 		
-		return $re;
+		return $this->status;
 	}
 	
 	protected function copyFromSource( gpDataSource $source ) {
@@ -462,7 +503,7 @@ class gpSlave extends gpConnection {
 				}
 			}
 		} else {
-			if ( preg_match( '!^ *([-_a-zA-Z0-9.\\\\/]+)( |$)!', $command, $m ) ) { // extract path from simple command
+			if ( preg_match( '!^ *([-_a-zA-Z0-9.\\\\/]+)( [^"\'|<>]$|$)!', $command, $m ) ) { // extract path from simple command
 				$path = $m[1];
 			}
 			
