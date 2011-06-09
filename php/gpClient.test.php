@@ -25,6 +25,13 @@ class gpClientTest extends PHPUnit_Framework_TestCase
 		$pong = $this->gp->ping();
     }
     
+    public function testTry() {
+		$x = $this->gp->try_foo();
+
+		$this->assertFalse( $x );
+		$this->assertEquals( 'FAILED', $this->gp->getStatus() );
+    }
+    
     public function testStats() {
 		$stats = $this->gp->capture_stats();
 		$stats = gpClientTest::pairs2map( $stats );

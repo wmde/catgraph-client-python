@@ -199,6 +199,18 @@ abstract class gpConnection {
 	public abstract function connect();
 	public abstract function close(); //FIXME: set $closed! //FIXME: close on quit/shutdown
 	
+	public function getStatus() {
+		return $this->status;
+	}
+	
+	public function getResponse() {
+		return $this->response;
+	}
+	
+	public function isClosed() {
+		return $this->closed;
+	}
+	
 	protected function trace( $context, $msg, $obj = 'nothing878423really' ) {
 		if ( $this->debug ) {
 			if ( $obj !== 'nothing878423really' ) {
@@ -231,6 +243,13 @@ abstract class gpConnection {
 		$source = null;
 		$sink = null;
 
+		if ( preg_match( '/^try-/', $cmd ) ) {
+			$cmd = substr( $cmd, 4 );
+			$try = true;
+		} else { 		
+			$try = false;
+		}
+		
 		if ( preg_match( '/^capture-/', $cmd ) ) {
 			$cmd = substr( $cmd, 8 );
 			$sink = new gpArraySink();
@@ -257,7 +276,12 @@ abstract class gpConnection {
 			}
 		}
 		
-		$status = $this->exec( $command, $source, $sink );
+		try {
+			$status = $this->exec( $command, $source, $sink );
+		} catch ( gpProcessorException $e ) {
+			if ( !$try ) throw $e;
+			else return false;
+		}
 		
 		if ( $capture ) return $sink->data;
 		else return $status;
