@@ -1,6 +1,6 @@
 <?php
 define( 'GP_LINEBREAK', "\n" );
-define( 'GP_PORT', 6699 );
+define( 'GP_PORT', 6666 );
 
 class gpException extends Exception {
 	function __construct( $msg ) {
@@ -286,42 +286,6 @@ abstract class gpConnection {
 		if ( $capture ) return $sink->data;
 		else return $status;
     }
-	
-	public static function splitRow( $s ) {
-		if ( $s === '' ) return false;
-		if ( $s === false || $s === null ) return false;
-		
-		if ( $s[0] == '#' ) {
-			$row = array( substr($s, 1) );
-		} else {
-			$row = preg_split( '/ *[;,\t] */', $s );
-			
-			foreach ( $row as $i => $v ) {
-				if ( preg_match('/^\d+$/', $v) ) {
-					$row[$i] = (int) $v;
-				}
-			}
-		}
-		
-		return $row;
-	}
-
-	public static function joinRow( $row ) {
-		if ( empty($row) ) return '';
-		
-		if ( is_string( $row ) ) {
-			return '#' . $row;
-		}
-		
-		if ( count( $row ) === 1 &&  is_string($row[0]) 
-				&& !preg_match( '/^\d+$/', $row[0] ) ) {
-			
-			return '#' . $row[0];
-		}
-		
-		$s = implode(',', $row);
-		return $s;
-	}
 
 	public function exec( $command, gpDataSource $source = null, gpDataSink $sink = null ) {
 		if ( $this->tainted ) {
@@ -393,9 +357,11 @@ abstract class gpConnection {
 		}
 		
 		preg_match( '/.*([.:]) *$/', $re, $m );
-		if ( empty( $m[1] ) ) throw new gpProtocolException("response should end with `.` or `:`. Found: `$re`");
 		
-		if ( $m[1] == ':' ) {
+		//TODO: be strict about status lines ending with "." or ":" in the future. maybe?
+		//if ( empty( $m[1] ) ) throw new gpProtocolException("response should end with `.` or `:`. Found: `$re`");
+		
+		if ( !empty($m[1]) && $m[1] == ':' ) {
 			if ( !$sink ) $sink = gpNullSink::$instance;
 			$this->copyToSink( $sink );
 		}
@@ -406,6 +372,43 @@ abstract class gpConnection {
 		}
 		
 		return $this->status;
+	}
+	
+	
+	public static function splitRow( $s ) {
+		if ( $s === '' ) return false;
+		if ( $s === false || $s === null ) return false;
+		
+		if ( $s[0] == '#' ) {
+			$row = array( substr($s, 1) );
+		} else {
+			$row = preg_split( '/ *[;,\t] */', $s );
+			
+			foreach ( $row as $i => $v ) {
+				if ( preg_match('/^\d+$/', $v) ) {
+					$row[$i] = (int) $v;
+				}
+			}
+		}
+		
+		return $row;
+	}
+
+	public static function joinRow( $row ) {
+		if ( empty($row) ) return '';
+		
+		if ( is_string( $row ) ) {
+			return '#' . $row;
+		}
+		
+		if ( count( $row ) === 1 &&  is_string($row[0]) 
+				&& !preg_match( '/^\d+$/', $row[0] ) ) {
+			
+			return '#' . $row[0];
+		}
+		
+		$s = implode(',', $row);
+		return $s;
 	}
 	
 	protected function copyFromSource( gpDataSource $source ) {
@@ -457,7 +460,7 @@ abstract class gpConnection {
 	 
 }
 
-class gpServerConnection extends gpConnection {
+class gpClient extends gpConnection {
 	var $host;
 	var $port;
 	var $graphname;
