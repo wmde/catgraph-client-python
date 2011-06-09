@@ -1,6 +1,7 @@
 <?php
-define( 'GP_NEWLINE', "\r\n" );
+define( 'GP_LINEBREAK', "\r\n" );
 define( 'GP_PORT', 6699 );
+define( 'GP_CAPTURE', -23 ); //NASTY HACK. but gp doesn't support negative ids, so...
 
 class gpException extends Exception {
 	function __construct( $msg ) {
@@ -23,7 +24,7 @@ class gpProtocolException extends gpException {
 }
 
 /////////////////////////////////////////////////////////////////////////
-class gpDataSource {
+abstract class gpDataSource {
 	public abstract function nextRow();
 	
 	public function close() {
@@ -41,7 +42,7 @@ class gpArraySource extends gpDataSource {
 	var $data;
 	var $index;
 	
-	public __construct($data, ) {
+	public function __construct( $data ) {
 		$this->data = $data;
 		$this->index = 0;
 	}
@@ -52,14 +53,19 @@ class gpArraySource extends gpDataSource {
 		$row = $this->data[ $this->index ];
 		$this->index += 1;
 		
+		if ( !is_array( $row ) ) $row = array( $row );
 		return $row;
+	}
+	
+	public function makeSink() {
+		return new gpArraySink( $this->data );
 	}
 }
 
 class gpPipeSource extends gpDataSource {
 	var $hin;
 	
-	public __construct( $hin ) {
+	public function __construct( $hin ) {
 		$this->hin = $hin;
 	}
 
@@ -80,7 +86,7 @@ class gpFileSource extends gpPipeSource {
 	var $path;
 	var $mode;
 	
-	public __construct( $path, $mode = 'r' ) {
+	public function __construct( $path, $mode = 'r' ) {
 		$this->mode = $mode;
 		$this->path = $path;
 		
@@ -97,7 +103,7 @@ class gpFileSource extends gpPipeSource {
 
 /////////////////////////////////////////////////////////////////////////
 
-class gpDataSink {
+abstract class gpDataSink {
 	public abstract function putRow( $row );
 	
 	public function close() {
@@ -114,8 +120,9 @@ class gpNullSink extends gpDataSink {
 class gpArraySink extends gpDataSink {
 	var $data;
 	
-	public __construct() {
-		$this->data = array();
+	public function __construct( &$data = null ) {
+		if ( $data ) $this->data &= $data;
+		else $data = array();
 	}
 	
 	public function putRow( $row ) {
@@ -125,12 +132,16 @@ class gpArraySink extends gpDataSink {
 	public function getData() {
 		return $this->data;
 	}
+	
+	public function makeSource() {
+		return new gpArraySource( $this->data );
+	}	
 }
 
 class gpPipeSink extends gpDataSink {
 	var $hout;
 	
-	public __construct( $hout ) {
+	public function __construct( $hout ) {
 		$this->hout = $hout;
 	}
 
@@ -145,7 +156,7 @@ class gpFileSink extends gpPipeSink {
 	var $path;
 	var $mode;
 	
-	public __construct( $path, $append ) {
+	public function __construct( $path, $append ) {
 		if ( $append === true ) $this->mode = 'a';
 		else if ( $append === false ) $this->mode = 'w';
 		else $this->mode = $append;
@@ -165,15 +176,78 @@ class gpFileSink extends gpPipeSink {
 
 /////////////////////////////////////////////////////////////////////////
 
-class gpConnection {
-	var $hout;
-	var $hin;
-	var $tainted;
-	var $closed;
+abstract class gpConnection {
+	protected $hout = null;
+	protected $hin = null;
+	protected $tainted = false;
+	protected $closed = false;
+	protected $status = null;
+
+	public $debug = false;
 
 	public abstract function connect();
 	public abstract function close(); //FIXME: set $closed! //FIXME: close on quit/shutdown
+	
+	protected function trace( $context, $msg, $obj = 'nothing878423really' ) {
+		if ( $this->debug ) {
+			if ( $obj !== 'nothing878423really' ) {
+				$msg .= ': ' . preg_replace( '/\s+/', ' ', var_export($obj, true) );
+			}
+			
+			print "[gpClient] $context: $msg\n";
+		}
+	}
+	
+	public function checkPeer() {
+		// noop
+	} 
+	
+	public function ping() {
+		//FIXME: use protocol_version once it's fixed
+		#$re = $this->protocol_version();
+		#$this->trace(__METHOD__, $re);
 
+		$re = $this->stats();
+		$this->trace(__METHOD__, $re);
+		
+		return $re;
+	}
+	
+    public function __call($name, $arguments) {
+		$cmd = str_replace( '_', '-', $name);
+		$cmd = preg_replace( '/^-*|-*$/', '', $cmd);
+		
+		$command = array( $cmd );
+		
+		$capture = false;
+		$source = null;
+		$sink = null;
+		
+		foreach ( $arguments as $arg ) {
+			if ( is_array( $arg ) ) {
+				$source = new gpArraySource( $arg );
+			} else if ( is_object( $arg ) ) {
+				if ( $arg instanceof gpDataSource ) $source = $arg;
+				else if ( $arg instanceof gpDataSink ) $sink = $arg;
+				else throw new Exception( "arguments must be primitive or a gpDataSource or qpDataSink. Found " . get_class($arg) );
+			} else if ( $arg === GP_CAPTURE ) {
+				$sink = new gpArraySink();
+				$capture = true;
+			} else if ( $arg === null || $arg === false ) {
+				continue;
+			} else if ( is_string($arg) || is_int($arg) ) {
+				$command[] = $arg;
+			} else {
+				throw new Exception( "arguments must be objects, strings or integers. Found " . type($arg) );
+			}
+		}
+		
+		$status = $this->exec( $command, $source, $sink );
+		
+		if ( $capture ) return $sink->data;
+		else return $status;
+    }
+	
 	public static function splitRow( $s ) {
 		if ( $s === '' ) return false;
 		if ( $s === false || $s === null ) return false;
@@ -213,6 +287,14 @@ class gpConnection {
 			throw new gpProtocolException("connection already closed!");
 		}
 		
+		if ( feof( $this->hin ) ) { // closed by peer
+			$this->trace(__METHOD__, "connection closed by peer, closing our side too.");
+			$this->close();
+			$this->tainted = true;
+			
+			throw new gpProtocolException("connection closed by peer!");
+		}
+
 		if ( is_array( $command ) ) {
 			$command = implode( ' ', $command );
 		}
@@ -224,19 +306,41 @@ class gpConnection {
 		
 		$re = fgets( $this->hin, 1024 ); //FIXME: what if response is too long?
 		
+		if ( $re === '' || $re === false || $re === null ) {
+			$this->tainted = true;
+			$this->status = null;
+			
+			$this->trace(__METHOD__, "peer did not respond! Got value " . var_export($re, true));
+			$this->checkPeer();
+			
+			throw new gpProtocolException("peer did not respond! Got value " . var_export($re, true));
+		}
+		
+		$re = trim($re);
+		$this->trace(__METHOD__, "response", $re);
+
+		$this->status = $re;
+		
 		preg_match( '/^([a-zA-Z]+)[.:!](.*)$/', $re, $m );
 		if ( empty( $m[1] ) ) {
 			$this->tainted = true;
-			//FIXME: should we close it??
-			throw new gpProtocolException("response should begin with status string like `OK`");
+			$this->close();
+			throw new gpProtocolException("response should begin with status string like `OK`. Found: `$re`");
 		}
 		
 		if ( $m[1] != 'OK' ) throw new gpProcessorException( $m[1], $m[2] );
 
 		preg_match( '/.*([.:]) *$/', $re, $m );
-		if ( empty( $m[1] ) ) throw new gpProtocolException("response should end with `.` or `:`");
+		if ( empty( $m[1] ) ) throw new gpProtocolException("response should end with `.` or `:`. Found: `$re`");
 		
 		if ( $m[1] == ':' ) $this->copyToSink( $sink );
+		
+		if ( feof( $this->hin ) ) { // closed by peer
+			$this->trace(__METHOD__, "connection closed by peer, closing our side too.");
+			$this->close();
+		}
+		
+		return $re;
 	}
 	
 	protected function copyFromSource( gpDataSource $source ) {
@@ -260,7 +364,7 @@ class gpConnection {
 		*/
 	}
 
-	protected function copyToSink( gpDataSink $sink ) {
+	protected function copyToSink( gpDataSink $sink = null ) {
 		$source = new gpPipeSource( $this->hin );
 		
 		gpConnection::copy( $source, $sink );
@@ -280,20 +384,21 @@ class gpConnection {
 		} */
 	}
 	
-	public static function copy( gpDataSource $source, gpDataSink $sink ) {
+	public static function copy( gpDataSource $source, gpDataSink $sink = null ) {
 		while ( $row = $source->nextRow() ) {
-			$sink->putRow( $row );
+			if ( $sink) $sink->putRow( $row );
 		}
 	}
 	 
 }
 
-class gpServerConnection {
+class gpServerConnection extends gpConnection {
 	var $host;
 	var $port;
 	var $graphname;
+	var $socket = false;
 
-	public __construct( $graph, $host = false, $port = false ) {
+	public function __construct( $graphname, $host = false, $port = false ) {
 		if ( $host === false ) $host = 'localhost';
 		if ( $port === false ) $port = GP_PORT;
 
@@ -301,41 +406,105 @@ class gpServerConnection {
 		$this->host = $host;
 		$this->graphname = $graphname;
 	}
-
+	
 	public function connect() {
-		........
+		$this->socket = fsockopen($this->host, $this->port, $errno, $errstr); //XXX: configure timeout?
+		
+		if ( !$this->socket ) throw new qpException( "failed to connect to " . $this->host . ":" . $this->port . ': ' . $errno . ' ' . $errstr );
+		
+		$this->hin = $this->socket;
+		$this->hout = $this->socket;
+		
+		if ( $this->graphname ) {
+			try {
+				$this->use_graph($this->graphname);
+			} catch ( qpException $e ) {
+				$this->close();
+				throw $e;
+			}
+		}
+		
+		return true;
 	}
 	
 	public function close() {
-		........
+		if ( !$this->socket ) return false;
+		
+		@fclose( $this->socket );
+
+		$this->process = false;
+		$this->closed = true;
 	}
 }
 
-class gpSlaveConnection {
+class gpSlave extends gpConnection {
 	var $process;
 	var $command;
 
-	public __construct( $command, $cwd = null, $env = null ) {
+	public function __construct( $command, $cwd = null, $env = null ) {
 		$this->command = $command;
 		
 		$this->cwd = $cwd;
 		$this->env = $env;
 	}
 
+	public function makeCommand( $command ) {
+		if ( empty( $command ) ) throw new Exception('empty command given');
+		
+		$path = null;
+		if ( is_array( $command ) ) {
+			foreach ( $command as $i => $arg ) {
+				if ( $i === 0) {
+					$cmd = escapeshellcmd( $arg );
+					$path = $args;
+				} else {
+					$cmd .= ' ' . escapeshellarg( $arg );
+				}
+			}
+		} else {
+			if ( preg_match( '!^ *([-_a-zA-Z0-9.\\\\/]+)( |$)!', $command, $m ) ) { // extract path from simple command
+				$path = $m[1];
+			}
+			
+			$cmd = trim($command);
+		}
+		
+		if ( $path ) {
+			if ( !file_exists( $path) ) throw new Exception('file does not exist: ' . $path);
+			if ( !is_readable( $path) ) throw new Exception('file does not readable: ' . $path);
+			if ( !is_executable( $path) ) throw new Exception('file does not executable: ' . $path);
+		}
+		
+		return $cmd;
+	}
+	
 	public function connect() {
+		$cmd = $this->makeCommand( $this->command );
+		
 		$descriptorspec = array(
 		   0 => array("pipe", "r"),  // stdin is a pipe that the child will read from
 		   1 => array("pipe", "w"),  // stdout is a pipe that the child will write to
-		   2 => array("pipe", "w"),  // XXX: nothing should ever go here... but what if it does?
+		   2 => array("pipe", "w"),  // XXX: nothing should ever go to stderr... but what if it does?
 		);
 
-		$this->process = proc_open($this->command, $descriptorspec, $pipes, $this->cwd, $this->env);
+		$this->process = proc_open($cmd, $descriptorspec, $pipes, $this->cwd, $this->env);
 		
-		if ( !$this->process ) throw new qpException( "failed to execute " . $this->command );
+		if ( !$this->process ) {
+			$this->trace(__METHOD__, "failed to execute " . $this->command );
+			throw new qpException( "failed to execute " . $this->command );
+		}
+
+		$this->trace(__METHOD__, "executing command " . $this->command . " as " . $this->process );
 		
 		$this->hin = $pipes[1];
 		$this->hout = $pipes[0];
 		//XXX: what about stderr ?!
+
+		$this->trace(__METHOD__, "reading from " . $this->hin );
+		$this->trace(__METHOD__, "writing to " . $this->hout );
+
+		usleep( 100 * 1000 ); //FIXME: HACK! wait 1/10th of a second to see if the command actually starts
+		$this->checkPeer();
 
 		return true;
 	}
@@ -343,9 +512,18 @@ class gpSlaveConnection {
 	public function close() {
 		if ( !$this->process ) return false;
 		
-		@pclose( $this->process );
+		@proc_close( $this->process );
 
 		$this->process = false;
 		$this->closed = true;
 	}
+	
+	public function checkPeer() {
+		$status = proc_get_status( $this->process );
+		
+		$this->trace(__METHOD__, "status", $status );
+
+		if ( !$status['running'] ) throw new gpProtocolException('slave process is not running! exit code ' . $status['exitcode'] ); 
+	} 
+	
 }
