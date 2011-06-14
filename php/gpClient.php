@@ -283,8 +283,13 @@ abstract class gpConnection {
 			else return false;
 		}
 		
-		if ( $capture ) return $sink->data;
-		else return $status;
+		if ( $capture ) {
+			if ( $status == 'OK' ) return $sink->data;
+			else if ( $status == 'NONE' ) return null;
+			else return false;
+		} else {
+			return $status;
+		}
     }
 
 	public function exec( $command, gpDataSource $source = null, gpDataSink $sink = null ) {
@@ -356,12 +361,7 @@ abstract class gpConnection {
 			throw new gpProcessorException( $this->status, $m[2], $command );
 		}
 		
-		preg_match( '/.*([.:]) *$/', $re, $m );
-		
-		//TODO: be strict about status lines ending with "." or ":" in the future. maybe?
-		//if ( empty( $m[1] ) ) throw new gpProtocolException("response should end with `.` or `:`. Found: `$re`");
-		
-		if ( !empty($m[1]) && $m[1] == ':' ) {
+		if ( preg_match( '/: *$/', $re ) ) {
 			if ( !$sink ) $sink = gpNullSink::$instance;
 			$this->copyToSink( $sink );
 		}

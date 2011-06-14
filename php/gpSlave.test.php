@@ -25,13 +25,6 @@ class gpSlaveTest extends PHPUnit_Framework_TestCase
 		$pong = $this->gp->ping();
     }
     
-    public function testTry() {
-		$x = $this->gp->try_foo();
-
-		$this->assertFalse( $x );
-		$this->assertEquals( 'FAILED', $this->gp->getStatus() );
-    }
-    
     public function testStats() {
 		$stats = $this->gp->capture_stats();
 		$stats = gpSlaveTest::pairs2map( $stats );
@@ -80,6 +73,54 @@ class gpSlaveTest extends PHPUnit_Framework_TestCase
     }
     
     ///////////////////////////////////////////////////////////////////
+    public function testTry() {
+		$x = $this->gp->try_foo();
+
+		$this->assertFalse( $x );
+		$this->assertEquals( 'FAILED', $this->gp->getStatus() );
+    }    
+    
+	public function testCapture() {
+		//TODO: capture single column data
+		//TODO: capture double column data
+		//TODO: capture none
+		//TODO: capture on command with no output (should be null or empty array?)
+		//TODO: capture throwing error
+		//TODO: capture with try
+	}
+    
+	public function testShutdown() {
+		//TODO...
+	}
+
+    ///////////////////////////////////////////////////////////////////
+	public function testArraySource() {
+		//TODO...
+	}
+    
+	public function testFileSource() {
+		//TODO...
+	}
+    
+	public function testArraySink() {
+		//TODO...
+	}
+    
+	public function testFileSink() {
+		//TODO...
+	}
+    
+    ///////////////////////////////////////////////////////////////////
+    public static function array_column($a, $col) {
+		$column = array();
+		
+		foreach ( $a as $k => $x ) {
+			$column[$k] = $x[$col];
+		}
+		
+		return $column;
+	}
+	
     public function assertStatus($field, $value) {
 		$stats = $this->gp->capture_stats();
 		$stats = gpSlaveTest::pairs2map( $stats );
