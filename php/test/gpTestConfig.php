@@ -1,13 +1,9 @@
 <?php
 
-$gpTestGraphCorePath = '/home/daniel/src/graphserv/graphcore/graphcore'; #FIXME: verify this!
-
-#$gpTestGraphCorePath = 'tee /tmp/graphcore.in | /home/daniel/src/graphserv/graphcore/graphcore | tee /tmp/graphcore.out';
-
-
+$gpTestGraphCorePath = '/usr/bin/graphcore';
 
 $gpTestGraphServHost = 'localhost';
-$gpTestGraphServPort = GP_PORT; #FIXME: verify this!
+$gpTestGraphServPort = GP_PORT; 
 
 $gpTestAdmin = 'fred';
 $gpTestAdminPassword = 'test';

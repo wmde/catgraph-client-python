@@ -131,10 +131,13 @@ abstract class gpSlaveTestBase extends gpConnectionTestBase
 		
 		$this->dump = new gpPipeSink( STDOUT ); 
 
-		$this->gp = new gpSlave( $gpTestGraphCorePath );
-		#$this->gp->debug = true;
-
-		$this->gp->connect();
+		try {
+			$this->gp = new gpSlave( $gpTestGraphCorePath );
+			$this->gp->connect();
+		} catch ( gpException $ex ) {
+			print("Unable to launch graphcore instance from $gpTestGraphCorePath, please make sure graphcore is installed and check the \$gpTestGraphCorePath configuration options in gpTestConfig.php.\nOriginal error: " . $ex->getMessage() . "\n");
+			exit(10);
+		}
 	}
 	
 }
@@ -144,22 +147,36 @@ abstract class gpClientTestBase extends gpConnectionTestBase
 	public function setUp() {
 		global $gpTestAdmin, $gpTestAdminPassword;
 		global $gpTestGraphName;
+		global $gpTestGraphServHost, $gpTestGraphServPort;
 		
-		$this->gp = $this->newConnection(); //FIXME: show config/setup error if connection fails!
+		try {
+			$this->gp = $this->newConnection(); 
+		} catch ( gpException $ex ) {
+			print("Unable to connect to $gpTestGraphServHost:$gpTestGraphServPort, please make sure the graphserv process is running and check the \$gpTestGraphServHost and \$gpTestGraphServPort configuration options in gpTestConfig.php.\nOriginal error: " . $ex->getMessage() . "\n");
+			exit(11);
+		}
 		
-		$this->gp->authorize( 'password', "$gpTestAdmin:$gpTestAdminPassword" );
-		$this->assertStatus('OK'); //FIXME: better error message, this is a config/setup error, not an assertion failure!
-		
-		$this->gp->create_graph( $gpTestGraphName );
-		$this->assertStatus('OK'); //FIXME: better error message, this is a config/setup error, not an assertion failure!
+		try {
+			$this->gp->authorize( 'password', "$gpTestAdmin:$gpTestAdminPassword" );
+		} catch ( gpException $ex ) {
+			print("Unable to connect to authorize as $gpTestAdmin, please check the \$gpTestAdmin and \$gpTestAdminPassword configuration options in gpTestConfig.php.\nOriginal error: " . $ex->getMessage() . "\n");
+			exit(12);
+		}
+
+		try {
+			$this->gp->create_graph( $gpTestGraphName );
+		} catch ( gpException $ex ) {
+			print("Unable to create graphe $gpTestGraphName, please check the \$gpTestGraphName configuration option in gpTestConfig.php as well as the privileges of user $gpTestAdmin.\nOriginal error: " . $ex->getMessage() . "\n");
+			exit(13);
+		}
 
 		$this->gp->use_graph( $gpTestGraphName );
-		$this->assertStatus('OK'); //FIXME: better error message, this is a config/setup error, not an assertion failure!
+		//if use_graph throws an error, let it rip. it really shouldn't happen and it's not a confiugration problem
 	}
 	
 	public function newConnection() {
 		global $gpTestGraphServHost, $gpTestGraphServPort;
-		
+
 		$gp = new gpClient( null, $gpTestGraphServHost, $gpTestGraphServPort );
 		$gp->connect();
 

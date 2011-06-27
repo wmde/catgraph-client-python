@@ -6,17 +6,6 @@ require_once('gpTestBase.php');
  */
 class gpSlaveTest extends gpSlaveTestBase
 {
-	public function setUp() {
-		global $gpTestGraphCorePath;
-		
-		$this->dump = new gpPipeSink( STDOUT ); 
-
-		$this->gp = new gpSlave( $gpTestGraphCorePath );
-		#$this->gp->debug = true;
-
-		$this->gp->connect();
-	}
-	
     //// Client Lib Functionality ///////////////////////////////////////////////////////////////
     // Tested here, not in gpConnectionTestBase, because we only need to test is once, not for every type of connection
     
