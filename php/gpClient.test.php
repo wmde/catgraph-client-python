@@ -118,14 +118,14 @@ class gpClientTest extends gpSlaveTest
 		$gp = $this->newConnection();
 		
 		$graphs = $gp->capture_list_graphs();
-		$graphs = gpSlaveTest::array_column( $graphs, 0 );
+		$graphs = array_column( $graphs, 0 );
 		$this->assertTrue( in_array( $gpTestGraphName, $graphs ), "test table $gpTestGraphName should be in the list" );
 		
 		$this->gp->drop_graph($gpTestGraphName);
 		$graphs = $gp->capture_list_graphs();
 		print "graphs: " . var_export($graphs, true) . "\n";
 		
-		$graphs = gpSlaveTest::array_column( $graphs, 0 );
+		$graphs = array_column( $graphs, 0 );
 		
 		print "graphs: " . var_export($graphs, true) . "\n";
 		
@@ -152,6 +152,10 @@ class gpClientTest extends gpSlaveTest
 
 	public function testReplaceSuccessorsPrivilege() {
 		
+	}
+
+	public function testShutdown() {
+
 	}
 
 

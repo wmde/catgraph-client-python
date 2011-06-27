@@ -132,7 +132,7 @@ class gpArraySink extends gpDataSink {
 	
 	public function __construct( &$data = null ) {
 		if ( $data ) $this->data &= $data;
-		else $this->data = array();
+		else $data = array();
 	}
 	
 	public function putRow( $row ) {
@@ -166,7 +166,7 @@ class gpFileSink extends gpPipeSink {
 	var $path;
 	var $mode;
 	
-	public function __construct( $path, $append = false ) {
+	public function __construct( $path, $append ) {
 		if ( $append === true ) $this->mode = 'a';
 		else if ( $append === false ) $this->mode = 'w';
 		else $this->mode = $append;
@@ -277,25 +277,17 @@ abstract class gpConnection {
 		}
 		
 		try {
-			$status = $this->exec( $command, $source, $sink, $has_output );
+			$status = $this->exec( $command, $source, $sink );
 		} catch ( gpProcessorException $e ) {
 			if ( !$try ) throw $e;
 			else return false;
 		}
 		
-		if ( $capture ) {
-			if ( $status == 'OK' ) {
-				if ( $has_output ) return $sink->data;
-				else return true;
-			}
-			else if ( $status == 'NONE' ) return null;
-			else return false;
-		} else {
-			return $status;
-		}
+		if ( $capture ) return $sink->data;
+		else return $status;
     }
 
-	public function exec( $command, gpDataSource $source = null, gpDataSink $sink = null, &$has_output = null ) {
+	public function exec( $command, gpDataSource $source = null, gpDataSink $sink = null ) {
 		if ( $this->tainted ) {
 			throw new gpProtocolException("connection tainted by previous error!");
 		}
@@ -364,13 +356,14 @@ abstract class gpConnection {
 			throw new gpProcessorException( $this->status, $m[2], $command );
 		}
 		
-		if ( preg_match( '/: *$/', $re ) ) {
-			if ( !$sink ) $sink = gpNullSink::$instance; //note: we need to slurp the result in any case!
+		preg_match( '/.*([.:]) *$/', $re, $m );
+		
+		//TODO: be strict about status lines ending with "." or ":" in the future. maybe?
+		//if ( empty( $m[1] ) ) throw new gpProtocolException("response should end with `.` or `:`. Found: `$re`");
+		
+		if ( !empty($m[1]) && $m[1] == ':' ) {
+			if ( !$sink ) $sink = gpNullSink::$instance;
 			$this->copyToSink( $sink );
-			
-			$has_output = true;
-		} else {
-			$has_output = false;
 		}
 		
 		if ( feof( $this->hin ) ) { // closed by peer
@@ -601,27 +594,4 @@ class gpSlave extends gpConnection {
 		if ( !$status['running'] ) throw new gpProtocolException('slave process is not running! exit code ' . $status['exitcode'] ); 
 	} 
 	
-	
 }
-
-function array_column($a, $col) {
-	$column = array();
-	
-	foreach ( $a as $k => $x ) {
-		$column[$k] = $x[$col];
-	}
-	
-	return $column;
-}
-
-function pairs2map( $pairs ) {
-	$map = array();
-	
-	foreach ( $pairs as $p ) {
-		$map[ $p[0] ] = $p[1];
-	}
-	
-	return $map;
-}
-	
-	
