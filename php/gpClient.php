@@ -545,9 +545,9 @@ class gpSlave extends gpConnection {
 		}
 		
 		if ( $path ) {
-			if ( !file_exists( $path) ) throw new Exception('file does not exist: ' . $path);
-			if ( !is_readable( $path) ) throw new Exception('file does not readable: ' . $path);
-			if ( !is_executable( $path) ) throw new Exception('file does not executable: ' . $path);
+			if ( !file_exists( $path) ) throw new gpException('file does not exist: ' . $path);
+			if ( !is_readable( $path) ) throw new gpException('file does not readable: ' . $path);
+			if ( !is_executable( $path) ) throw new gpException('file does not executable: ' . $path);
 		}
 		
 		return $cmd;
