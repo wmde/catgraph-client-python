@@ -1,7 +1,10 @@
 <?php
 require_once('gpTestBase.php');
  
-class gpSlaveTest extends gpConnectionTestBase
+/**
+ * Tests a connection to a slave process, as well as general client lib functionality.
+ */
+class gpSlaveTest extends gpSlaveTestBase
 {
 	public function setUp() {
 		global $gpTestGraphCorePath;
@@ -95,13 +98,13 @@ class gpSlaveTest extends gpConnectionTestBase
 		
 		$arcs = $this->gp->capture_list_successors( 1 );
 		
-		$this->assertTrue( gpSlaveTest::setEquals( $arcs, array(
+		$this->assertTrue( gpConnectionTestBase::setEquals( $arcs, array(
 			array( 11 ),
 			array( 12 ),
 		) ), "sucessors of (1)" );
 		
 		$arcs = $this->gp->capture_list_successors( 11 );
-		$this->assertTrue( gpSlaveTest::setEquals( $arcs, array(
+		$this->assertTrue( gpConnectionTestBase::setEquals( $arcs, array(
 			array( 111 ),
 			array( 112 ),
 		) ), "sucessors of (2)" );
@@ -140,56 +143,14 @@ class gpSlaveTest extends gpConnectionTestBase
 			"111\n",
 			"112\n",
 		);
-		$this->assertTrue( gpSlaveTest::setEquals($expected, $rows), 'bad content in outfile: ' . var_export( $rows, true ) . ', expected ' . var_export( $expected, true ) );
+		$this->assertTrue( gpConnectionTestBase::setEquals($expected, $rows), 'bad content in outfile: ' . var_export( $rows, true ) . ', expected ' . var_export( $expected, true ) );
 
 		//cleanup
 		@unlink($f);
 	}
-    
-    //// Core Functions ///////////////////////////////////////////////////////////////
-    // This doesn't test the client lib but rather the core itself
-    
-    public function testAddArcs() {
-		$this->gp->add_arcs( array(
-			array( 1, 11 ),
-			array( 1, 12 ),
-			array( 11, 111 ),
-			array( 11, 112 ),
-		) );
-		
-		$this->assertStatsValue( 'ArcCount', 4 );
-		
-		$arcs = $this->gp->capture_list_successors( 1 );
-		
-		$this->assertTrue( gpSlaveTest::setEquals( $arcs, array(
-			array( 11 ),
-			array( 12 ),
-		) ), "sucessors of (1)" );
-		
-		$arcs = $this->gp->capture_list_successors( 11 );
-		$this->assertTrue( gpSlaveTest::setEquals( $arcs, array(
-			array( 111 ),
-			array( 112 ),
-		) ), "sucessors of (2)" );
 
-		// ------------------------------------------------------
-		
-		$this->gp->add_arcs( array(
-			array( 1, 11 ),
-			array( 11, 112 ),
-			array( 2, 21 ),
-		) );
-
-		$this->assertStatsValue( 'ArcCount', 5 );
-
-		$arcs = $this->gp->capture_list_successors( 2 );
-		$this->assertTrue( gpSlaveTest::setEquals( $arcs, array(
-			array( 21 ),
-		) ), "sucessors of (2)" );
-		
-    }
-    
-    //TODO: add all the tests we have in the talkback test suit
-    
+    //// Slave Connection Tests ///////////////////////////////////////////////////
+    // currently none. could check if the process really dies after quit, etc
+       
 }
 

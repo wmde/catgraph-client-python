@@ -44,13 +44,13 @@ abstract class gpConnectionTestBase extends PHPUnit_Framework_TestCase
 		
 		$arcs = $this->gp->capture_list_successors( 1 );
 		
-		$this->assertTrue( gpSlaveTest::setEquals( $arcs, array(
+		$this->assertTrue( gpConnectionTestBase::setEquals( $arcs, array(
 			array( 11 ),
 			array( 12 ),
 		) ), "sucessors of (1)" );
 		
 		$arcs = $this->gp->capture_list_successors( 11 );
-		$this->assertTrue( gpSlaveTest::setEquals( $arcs, array(
+		$this->assertTrue( gpConnectionTestBase::setEquals( $arcs, array(
 			array( 111 ),
 			array( 112 ),
 		) ), "sucessors of (2)" );
@@ -76,7 +76,7 @@ abstract class gpConnectionTestBase extends PHPUnit_Framework_TestCase
 		foreach ( $a as $v ) {
 			if ( is_array( $v ) ) {
 				if ( is_array( $w ) ) {
-					if ( gpSlaveTest::arrayEquals( $v, $w ) ) {
+					if ( gpConnectionTestBase::arrayEquals( $v, $w ) ) {
 						$found = true;
 						break;
 					}
@@ -96,7 +96,7 @@ abstract class gpConnectionTestBase extends PHPUnit_Framework_TestCase
 		if ( count($a) != count($b) ) return false;
 		
 		foreach ( $a as $v ) {
-			if ( !gpSlaveTest::setContains($b, $v) ) {
+			if ( !gpConnectionTestBase::setContains($b, $v) ) {
 				return false;
 			}
 		}
@@ -112,7 +112,7 @@ abstract class gpConnectionTestBase extends PHPUnit_Framework_TestCase
 			
 			if ( is_array( $v ) ) {
 				//WARNING: no protection against circular array references
-				if ( !is_array($w) || !gpSlaveTest::arrayEquals( $w, $v ) ) {
+				if ( !is_array($w) || !gpConnectionTestBase::arrayEquals( $w, $v ) ) {
 					return false;
 				}
 			} else if ( $w != $v ) {
@@ -122,4 +122,55 @@ abstract class gpConnectionTestBase extends PHPUnit_Framework_TestCase
 		
 		return true;
 	}    
+}
+
+abstract class gpSlaveTestBase extends gpConnectionTestBase
+{
+	public function setUp() {
+		global $gpTestGraphCorePath;
+		
+		$this->dump = new gpPipeSink( STDOUT ); 
+
+		$this->gp = new gpSlave( $gpTestGraphCorePath );
+		#$this->gp->debug = true;
+
+		$this->gp->connect();
+	}
+	
+}
+
+abstract class gpClientTestBase extends gpConnectionTestBase
+{
+	public function setUp() {
+		global $gpTestAdmin, $gpTestAdminPassword;
+		global $gpTestGraphName;
+		
+		$this->gp = $this->newConnection(); //FIXME: show config/setup error if connection fails!
+		
+		$this->gp->authorize( 'password', "$gpTestAdmin:$gpTestAdminPassword" );
+		$this->assertStatus('OK'); //FIXME: better error message, this is a config/setup error, not an assertion failure!
+		
+		$this->gp->create_graph( $gpTestGraphName );
+		$this->assertStatus('OK'); //FIXME: better error message, this is a config/setup error, not an assertion failure!
+
+		$this->gp->use_graph( $gpTestGraphName );
+		$this->assertStatus('OK'); //FIXME: better error message, this is a config/setup error, not an assertion failure!
+	}
+	
+	public function newConnection() {
+		global $gpTestGraphServHost, $gpTestGraphServPort;
+		
+		$gp = new gpClient( null, $gpTestGraphServHost, $gpTestGraphServPort );
+		$gp->connect();
+
+		return $gp;
+	}
+	
+	public function tearDown() {
+		global $gpTestGraphName;
+		
+		$this->gp->try_drop_graph( $gpTestGraphName );
+		parent::tearDown();
+	}
+
 }
