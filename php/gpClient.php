@@ -266,7 +266,7 @@ abstract class gpConnection {
 			} else if ( is_object( $arg ) ) {
 				if ( $arg instanceof gpDataSource ) $source = $arg;
 				else if ( $arg instanceof gpDataSink ) $sink = $arg;
-				else throw new Exception( "arguments must be primitive or a gpDataSource or qpDataSink. Found " . get_class($arg) );
+				else throw new Exception( "arguments must be primitive or a gpDataSource or gpDataSink. Found " . get_class($arg) );
 			} else if ( $arg === null || $arg === false ) {
 				continue;
 			} else if ( is_string($arg) || is_int($arg) ) {
@@ -483,9 +483,9 @@ class gpClient extends gpConnection {
 	}
 	
 	public function connect() {
-		$this->socket = fsockopen($this->host, $this->port, $errno, $errstr); //XXX: configure timeout?
+		$this->socket = @fsockopen($this->host, $this->port, $errno, $errstr); //XXX: configure timeout?
 		
-		if ( !$this->socket ) throw new qpException( "failed to connect to " . $this->host . ":" . $this->port . ': ' . $errno . ' ' . $errstr );
+		if ( !$this->socket ) throw new gpException( "failed to connect to " . $this->host . ":" . $this->port . ': ' . $errno . ' ' . $errstr );
 		
 		$this->hin = $this->socket;
 		$this->hout = $this->socket;
@@ -493,7 +493,7 @@ class gpClient extends gpConnection {
 		if ( $this->graphname ) {
 			try {
 				$this->use_graph($this->graphname);
-			} catch ( qpException $e ) {
+			} catch ( gpException $e ) {
 				$this->close();
 				throw $e;
 			}
@@ -566,7 +566,7 @@ class gpSlave extends gpConnection {
 		
 		if ( !$this->process ) {
 			$this->trace(__METHOD__, "failed to execute " . $this->command );
-			throw new qpException( "failed to execute " . $this->command );
+			throw new gpException( "failed to execute " . $this->command );
 		}
 
 		$this->trace(__METHOD__, "executing command " . $this->command . " as " . $this->process );
