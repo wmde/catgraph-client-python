@@ -192,6 +192,7 @@ abstract class gpConnection {
 	protected $tainted = false;
 	protected $closed = false;
 	protected $status = null;
+	protected $statusMessage = null;
 	protected $response = null;
 
 	public $debug = false;
@@ -201,6 +202,10 @@ abstract class gpConnection {
 	
 	public function getStatus() {
 		return $this->status;
+	}
+	
+	public function getStatusMessage() {
+		return $this->statusMessage;
 	}
 	
 	public function getResponse() {
@@ -226,11 +231,7 @@ abstract class gpConnection {
 	} 
 	
 	public function ping() {
-		//FIXME: use protocol_version once it's fixed
-		#$re = $this->protocol_version();
-		#$this->trace(__METHOD__, $re);
-
-		$re = $this->stats();
+		$re = $this->protocol_version();
 		$this->trace(__METHOD__, $re);
 		
 		return $re;
@@ -338,6 +339,7 @@ abstract class gpConnection {
 		if ( $re === '' || $re === false || $re === null ) {
 			$this->tainted = true;
 			$this->status = null;
+			$this->statusMessage = null;
 			$this->response = null;
 			
 			$this->trace(__METHOD__, "peer did not respond! Got value " . var_export($re, true));
@@ -351,7 +353,7 @@ abstract class gpConnection {
 
 		$this->response = $re;
 			
-		preg_match( '/^([a-zA-Z]+)[.:!](.*)$/', $re, $m );
+		preg_match( '/^([a-zA-Z]+)[.:!](.*?):?$/', $re, $m );
 		if ( empty( $m[1] ) ) {
 			$this->tainted = true;
 			$this->close();
@@ -359,6 +361,7 @@ abstract class gpConnection {
 		}
 		
 		$this->status = $m[1];
+		$this->statusMessage = trim($m[2]);
 		
 		if ( $this->status != 'OK' && $this->status != 'NONE' ) {
 			throw new gpProcessorException( $this->status, $m[2], $command );
