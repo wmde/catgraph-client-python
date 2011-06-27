@@ -6,6 +6,9 @@ require_once('gpTestBase.php');
  */
 class gpSlaveTest extends gpSlaveTestBase
 {
+    //// Client Lib Functions ///////////////////////////////////////////////////////////////
+    //TODO: test getStatusMessage, isClosed, etc
+    
     //// Client Lib Functionality ///////////////////////////////////////////////////////////////
     // Tested here, not in gpConnectionTestBase, because we only need to test is once, not for every type of connection
     
@@ -70,6 +73,205 @@ class gpSlaveTest extends gpSlaveTestBase
 		//capture with try
 		$x = $this->gp->try_capture_foo();
 		//should not trigger an exception...
+	}
+
+	public function testCommandValidation() {
+		try {
+			$s = '';
+			$x = $this->gp->exec($s);
+			$this->fail("empty command should be detected");
+		} catch ( gpUsageException $e ) {
+			//ok
+		} catch ( gpProcessorException $e ) {
+			$this->fail("empty command should hzave been detected by the client; core message: " . $e->getMessage());
+		}
+		
+		try {
+			$s = '';
+			$x = $this->gp->exec( array($s, 'xxx') );
+			$this->fail("empty command name should be detected");
+		} catch ( gpUsageException $e ) {
+			//ok
+		} catch ( gpProcessorException $e ) {
+			$this->fail("empty command name should hzave been detected by the client; core message: " . $e->getMessage());
+		}
+		
+		try {
+			$s = '123';
+			$x = $this->gp->exec($s);
+			$this->fail("bad command should be detected: $s");
+		} catch ( gpUsageException $e ) {
+			//ok
+		} catch ( gpProcessorException $e ) {
+			$this->fail("bad command should have been detected by the client: $s; core message: " . $e->getMessage());
+		}
+		
+		try {
+			$s = '123';
+			$x = $this->gp->exec( array($s) );
+			$this->fail("bad command name should be detected: $s");
+		} catch ( gpUsageException $e ) {
+			//ok
+		} catch ( gpProcessorException $e ) {
+			$this->fail("bad command name should have been detected by the client: $s; core message: " . $e->getMessage());
+		}
+		
+		try {
+			$s = ' x ';
+			$x = $this->gp->exec($s);
+			$this->fail("bad command should be detected: $s");
+		} catch ( gpUsageException $e ) {
+			//ok
+		} catch ( gpProcessorException $e ) {
+			$this->fail("bad command should have been detected by the client: $s; core message: " . $e->getMessage());
+		}
+		
+		try {
+			$s = ' x ';
+			$x = $this->gp->exec( array($s) );
+			$this->fail("bad command name should be detected: $s");
+		} catch ( gpUsageException $e ) {
+			//ok
+		} catch ( gpProcessorException $e ) {
+			$this->fail("bad command name should have been detected by the client: $s; core message: " . $e->getMessage());
+		}
+		
+		try {
+			$s = '<x>y';
+			$x = $this->gp->exec($s);
+			$this->fail("bad command should be detected: $s");
+		} catch ( gpUsageException $e ) {
+			//ok
+		} catch ( gpProcessorException $e ) {
+			$this->fail("bad command should have been detected by the client: $s; core message: " . $e->getMessage());
+		}
+		
+		try {
+			$s = '<x>y';
+			$x = $this->gp->exec( array($s) );
+			$this->fail("bad command name should be detected: $s");
+		} catch ( gpUsageException $e ) {
+			//ok
+		} catch ( gpProcessorException $e ) {
+			$this->fail("bad command name should have been detected by the client: $s; core message: " . $e->getMessage());
+		}
+		
+		$chars = " \r\n\t\0\x09^!\"§\$%&/()[]\{\}=?'#`\\*+~.:,;<>|@\xDD";
+		for ( $i = 0; $i<strlen($chars); $i++ ) {
+			$ch = $chars[$i];
+			
+			try {
+				$s = "a{$ch}b";
+				$x = $this->gp->exec($s);
+				$this->fail("bad command should be detected: $s");
+			} catch ( gpUsageException $e ) {
+				//ok
+			} catch ( gpProcessorException $e ) {
+				$this->fail("bad command should have been detected by the client: $s; core message: " . $e->getMessage());
+			}
+
+			try {
+				$s = "a{$ch}b";
+				$x = $this->gp->exec( array($s) );
+				$this->fail("bad command name should be detected: $s");
+			} catch ( gpUsageException $e ) {
+				//ok
+			} catch ( gpProcessorException $e ) {
+				$this->fail("bad command name should have been detected by the client: $s; core message: " . $e->getMessage());
+			}
+		}
+		
+		// operators -----------------------------------------
+		try {
+			$s = 'clear && clear';
+			$x = $this->gp->exec($s);
+		} catch ( gpUsageException $e ) {
+			$this->fail("operators should be allowd! $s");
+		} catch ( gpProcessorException $e ) {
+			//ok, should fail in core
+		}
+		
+		try {
+			$s = 'clear !&& clear';
+			$x = $this->gp->exec($s);
+		} catch ( gpUsageException $e ) {
+			$this->fail("operators should be allowd! $s");
+		} catch ( gpProcessorException $e ) {
+			//ok, should fail in core
+		}
+		
+		// pipes disallowed -----------------------------------------
+		$this->gp->allowPipes = false;
+		
+		try {
+			$s = 'clear > /tmp/test';
+			$x = $this->gp->exec($s);
+			$this->fail("pipe should be disallowed: $s");
+		} catch ( gpUsageException $e ) {
+			//ok
+		} catch ( gpProcessorException $e ) {
+			$this->fail("pipe should be disallowed by client: $s; core message: " . $e->getMessage());
+		}
+		
+		try {
+			$s = 'clear < /tmp/test';
+			$x = $this->gp->exec($s);
+			$this->fail("pipe should be disallowed: $s");
+		} catch ( gpUsageException $e ) {
+			//ok
+		} catch ( gpProcessorException $e ) {
+			$this->fail("pipe should be disallowed by client: $s; core message: " . $e->getMessage());
+		}
+		
+		// pipes allowed -----------------------------------------
+		$this->gp->allowPipes = true;
+		
+		try {
+			$s = 'clear > /tmp/test';
+			$x = $this->gp->exec($s);
+			throw new Exception("should fail in core, because clear has no output!");
+		} catch ( gpUsageException $e ) {
+			$this->fail("pipe should be allowed by client: $s");
+		} catch ( gpProcessorException $e ) {
+			//ok, should fail in core, because clear has no output
+		}
+		
+		try {
+			$s = 'clear < /tmp/test';
+			$x = $this->gp->exec($s);
+			throw new Exception("should fail in core, because clear accepts no input!");
+		} catch ( gpUsageException $e ) {
+			$this->fail("pipe should be allowed by client: $s");
+		} catch ( gpProcessorException $e ) {
+			//ok, should fail in core, because clear accepts no input
+		}
+		
+		// pipes conflict -----------------------------------------
+		
+		try {
+			$s = 'clear > /tmp/test';
+			$x = $this->gp->exec($s, null, gpNullSink::$instance);
+			$this->fail("pipe should be disallowed if sink is given: $s");
+		} catch ( gpUsageException $e ) {
+			//ok
+		} catch ( gpProcessorException $e ) {
+			$this->fail("pipe should be disallowed by client if sink is given: $s; core message: " . $e->getMessage());
+		}
+		
+		try {
+			$s = 'clear < /tmp/test';
+			$x = $this->gp->exec($s, gpNullSource::$instance, null);
+			$this->fail("pipe should be disallowed if source is given: $s");
+		} catch ( gpUsageException $e ) {
+			//ok
+		} catch ( gpProcessorException $e ) {
+			$this->fail("pipe should be disallowed by client if source is given: $s; core message: " . $e->getMessage());
+		}
+		
+	}
+
+	public function testArgumentValidation() {
+		//TODO!!!
 	}
 
     //// Client Lib I/O ///////////////////////////////////////////////////////////////
@@ -140,6 +342,6 @@ class gpSlaveTest extends gpSlaveTestBase
 
     //// Slave Connection Tests ///////////////////////////////////////////////////
     // currently none. could check if the process really dies after quit, etc
-       
+    //TODO: test checkPeer, etc
 }
 

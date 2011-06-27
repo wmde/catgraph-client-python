@@ -1,6 +1,6 @@
 <?php
 
-$gpTestGraphCorePath = '/usr/bin/graphcore';
+$gpTestGraphCorePath = '/home/daniel/src/graphserv/graphcore/graphcore';
 
 $gpTestGraphServHost = 'localhost';
 $gpTestGraphServPort = GP_PORT; 

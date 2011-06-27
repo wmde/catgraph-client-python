@@ -25,6 +25,12 @@ class gpProtocolException extends gpException {
 	}
 }
 
+class gpUsageException extends gpException {
+	function __construct( $msg ) {
+		gpException::__construct( $msg );
+	}
+}
+
 /////////////////////////////////////////////////////////////////////////
 abstract class gpDataSource {
 	public abstract function nextRow();
@@ -97,7 +103,7 @@ class gpFileSource extends gpPipeSource {
 		$this->path = $path;
 		
 		$h = fopen( $this->path, $this->mode );
-		if ( !$h ) throw new gpException( "failed to open " . $this->path );
+		if ( !$h ) throw new gpUsageException( "failed to open " . $this->path );
 		
 		gpPipeSource::__construct( $h );
 	}
@@ -174,7 +180,7 @@ class gpFileSink extends gpPipeSink {
 		$this->path = $path;
 		
 		$h = fopen( $this->path, $this->mode );
-		if ( !$h ) throw new gpException( "failed to open " . $this->path );
+		if ( !$h ) throw new gpUsageException( "failed to open " . $this->path );
 		
 		gpPipeSink::__construct( $h );
 	}
@@ -194,6 +200,9 @@ abstract class gpConnection {
 	protected $status = null;
 	protected $statusMessage = null;
 	protected $response = null;
+	
+	public $allowPipes = false;
+	public $strictArguments = true;
 
 	public $debug = false;
 	
@@ -314,10 +323,27 @@ abstract class gpConnection {
 		}
 
 		if ( is_array( $command ) ) {
+			if ( $command && !self::isValidCommandName( $command[0] ) ) {
+				throw new gpUsageException("invalid command name: " . $command[0]);
+			}
+			
+			$strictArgs = $this->strictArguments;
+			foreach ( $command as $c ) {
+				if ( $this->allowPipes && preg_match('/^[<>]$/', $c) ) $strictArgs = false; // pipe, allow lenient args after that
+				if ( $this->allowPipes && preg_match('/^[|&!:<>]+$/', $c) ) continue; //operator
+				
+				if ( !self::isValidCommandArgument($c, $strictArgs) ) throw new gpUsageException("invalid argument: $c");
+			}
+			
 			$command = implode( ' ', $command );
+		} else {
 		}
 		
 		$command = trim($command);
+		
+		if ($command == '') throw new gpUsageException("command is empty!");
+
+		if ( !self::isValidCommandString($command, $this->allowPipes) ) throw new gpUsageException("invalid command: $command");
 		
 		if ( $source && !preg_match('/:$/', $command) ) {
 			$command .= ':';
@@ -325,6 +351,14 @@ abstract class gpConnection {
 		
 		if ( !$source && preg_match('/:$/', $command) ) {
 			$source = gpNullSource::$instance;
+		}
+		
+		if ( $source && preg_match('/</', $command) ) {
+			throw new gpUsageException("can't use data input file and a local data source at the same time! $command");
+		}
+
+		if ( $sink && preg_match('/>/', $command) ) {
+			throw new gpUsageException("can't use data output file and a local data sink at the same time! $command");
 		}
 		
 		fputs( $this->hout, $command . "\n" ); #FIXME: "\r\n"???
@@ -384,6 +418,25 @@ abstract class gpConnection {
 		return $this->status;
 	}
 	
+	public static function isValidCommandName( $name ) {
+		return preg_match('/[a-zA-Z_][-\w]+/', $name);
+	}
+	
+	public static function isValidCommandString( $command, $allowPipes = false ) {
+		if ( !$allowPipes && preg_match('/[<>]/', $command) ) return false;
+		
+		if ( !preg_match('/^[a-zA-Z_][-\w]+($|[\s!:&|<>#])/', $command) ) return false; // must start with a valid command
+		
+		return !preg_match('/[\0-\x1F\x80-\xFF]/', $command);
+	}
+	
+	public static function isValidCommandArgument( $arg, $strict = true ) {
+		if ( $arg === '' || $arg === false || $arg === null ) return false;
+
+		if ( $strict ) return preg_match('/\w[-\w]+/', $arg);
+		
+		return !preg_match('/[\0-\x1F\x80-\xFF:|<>!&#]/', $arg); //low chars, high chars, and operators.
+	}
 	
 	public static function splitRow( $s ) {
 		if ( $s === '' ) return false;
@@ -488,7 +541,7 @@ class gpClient extends gpConnection {
 	public function connect() {
 		$this->socket = @fsockopen($this->host, $this->port, $errno, $errstr); //XXX: configure timeout?
 		
-		if ( !$this->socket ) throw new gpException( "failed to connect to " . $this->host . ":" . $this->port . ': ' . $errno . ' ' . $errstr );
+		if ( !$this->socket ) throw new gpProtocolException( "failed to connect to " . $this->host . ":" . $this->port . ': ' . $errno . ' ' . $errstr );
 		
 		$this->hin = $this->socket;
 		$this->hout = $this->socket;
@@ -548,9 +601,9 @@ class gpSlave extends gpConnection {
 		}
 		
 		if ( $path ) {
-			if ( !file_exists( $path) ) throw new gpException('file does not exist: ' . $path);
-			if ( !is_readable( $path) ) throw new gpException('file does not readable: ' . $path);
-			if ( !is_executable( $path) ) throw new gpException('file does not executable: ' . $path);
+			if ( !file_exists( $path) ) throw new gpUsageException('file does not exist: ' . $path);
+			if ( !is_readable( $path) ) throw new gpUsageException('file does not readable: ' . $path);
+			if ( !is_executable( $path) ) throw new gpUsageException('file does not executable: ' . $path);
 		}
 		
 		return $cmd;
@@ -569,7 +622,7 @@ class gpSlave extends gpConnection {
 		
 		if ( !$this->process ) {
 			$this->trace(__METHOD__, "failed to execute " . $this->command );
-			throw new gpException( "failed to execute " . $this->command );
+			throw new gpProtocolException( "failed to execute " . $this->command );
 		}
 
 		$this->trace(__METHOD__, "executing command " . $this->command . " as " . $this->process );
