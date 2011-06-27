@@ -1,9 +1,7 @@
 <?php
-
-require_once('PHPUnit/Framework.php');
-require_once('gpClient.php');
+require_once('gpTestBase.php');
  
-class gpSlaveTest extends PHPUnit_Framework_TestCase
+class gpSlaveTest extends gpConnectionTestBase
 {
 	public function setUp() {
 		global $gpTestGraphCorePath;
@@ -16,63 +14,9 @@ class gpSlaveTest extends PHPUnit_Framework_TestCase
 		$this->gp->connect();
 	}
 	
-	public function tearDown() {
-		if ($this->gp) $this->gp->close();
-	}
-    ///////////////////////////////////////////////////////////////////
-
-    public function testPing() {
-		$pong = $this->gp->ping();
-    }
+    //// Client Lib Functionality ///////////////////////////////////////////////////////////////
+    // Tested here, not in gpConnectionTestBase, because we only need to test is once, not for every type of connection
     
-    public function testStats() {
-		$stats = $this->gp->capture_stats();
-		$stats = pairs2map( $stats );
-		
-		$this->assertEquals( $stats['ArcCount'], 0, "arc count should be zero" );
-    }
-    
-    public function testAddArcs() {
-		$this->gp->add_arcs( array(
-			array( 1, 11 ),
-			array( 1, 12 ),
-			array( 11, 111 ),
-			array( 11, 112 ),
-		) );
-		
-		$this->assertStatsValue( 'ArcCount', 4 );
-		
-		$arcs = $this->gp->capture_list_successors( 1 );
-		
-		$this->assertTrue( gpSlaveTest::setEquals( $arcs, array(
-			array( 11 ),
-			array( 12 ),
-		) ), "sucessors of (1)" );
-		
-		$arcs = $this->gp->capture_list_successors( 11 );
-		$this->assertTrue( gpSlaveTest::setEquals( $arcs, array(
-			array( 111 ),
-			array( 112 ),
-		) ), "sucessors of (2)" );
-
-		// ------------------------------------------------------
-		
-		$this->gp->add_arcs( array(
-			array( 1, 11 ),
-			array( 11, 112 ),
-			array( 2, 21 ),
-		) );
-
-		$this->assertStatsValue( 'ArcCount', 5 );
-
-		$arcs = $this->gp->capture_list_successors( 2 );
-		$this->assertTrue( gpSlaveTest::setEquals( $arcs, array(
-			array( 21 ),
-		) ), "sucessors of (2)" );
-		
-    }
-    
-    ///////////////////////////////////////////////////////////////////
     public function testTry() {
 		$x = $this->gp->try_foo();
 
@@ -135,27 +79,10 @@ class gpSlaveTest extends PHPUnit_Framework_TestCase
 		$x = $this->gp->try_capture_foo();
 		//should not trigger an exception...
 	}
-    
-	public function testQuit() {
-		$this->gp->quit();
-		$this->assertStatus( 'OK' );
 
-		try {
-			$x = $this->gp->try_status();
-			$this->fail("running a command on a closed connection should always trigger an error");
-		} catch ( gpProtocolException $e ) {
-			//this is the expected outcome: the connection is closed.
-		}
-	}
-
-    ///////////////////////////////////////////////////////////////////
-	public function testArraySource() {
-		//TODO...
-	}
-    
-	public function testArraySink() {
-		//TODO...
-	}
+    //// Client Lib I/O ///////////////////////////////////////////////////////////////
+    // Tested here, not in gpConnectionTestBase, because we only need to test is once, not for every type of connection
+	// Note: ArraySource and ArraySink are used implicitly all the time in the tests, no need to test them separately.
     
 	public function testFileSource() {
 		$f = dirname(__FILE__) . '/gp.test.data';
@@ -219,78 +146,50 @@ class gpSlaveTest extends PHPUnit_Framework_TestCase
 		@unlink($f);
 	}
     
-    ///////////////////////////////////////////////////////////////////
+    //// Core Functions ///////////////////////////////////////////////////////////////
+    // This doesn't test the client lib but rather the core itself
     
-    //TODO: test all commands, including edge cases. iuse talkback tests as the basis
-	//      ...put that into gpCore.test.php instead...
-    
-    ///////////////////////////////////////////////////////////////////
-    public function assertStatsValue($field, $value ) {
-		$stats = $this->gp->capture_stats();
-		$stats = pairs2map( $stats );
+    public function testAddArcs() {
+		$this->gp->add_arcs( array(
+			array( 1, 11 ),
+			array( 1, 12 ),
+			array( 11, 111 ),
+			array( 11, 112 ),
+		) );
 		
-		$this->assertEquals( $stats[$field], $value, "status[$field]" );
+		$this->assertStatsValue( 'ArcCount', 4 );
+		
+		$arcs = $this->gp->capture_list_successors( 1 );
+		
+		$this->assertTrue( gpSlaveTest::setEquals( $arcs, array(
+			array( 11 ),
+			array( 12 ),
+		) ), "sucessors of (1)" );
+		
+		$arcs = $this->gp->capture_list_successors( 11 );
+		$this->assertTrue( gpSlaveTest::setEquals( $arcs, array(
+			array( 111 ),
+			array( 112 ),
+		) ), "sucessors of (2)" );
+
+		// ------------------------------------------------------
+		
+		$this->gp->add_arcs( array(
+			array( 1, 11 ),
+			array( 11, 112 ),
+			array( 2, 21 ),
+		) );
+
+		$this->assertStatsValue( 'ArcCount', 5 );
+
+		$arcs = $this->gp->capture_list_successors( 2 );
+		$this->assertTrue( gpSlaveTest::setEquals( $arcs, array(
+			array( 21 ),
+		) ), "sucessors of (2)" );
+		
     }
     
-    public function assertStatus($value, $mssage = null) {
-		$status = $this->gp->getStatus();
-		
-		$this->assertEquals( $value, $status, $mssage );
-    }
+    //TODO: add all the tests we have in the talkback test suit
     
-    public static function setContains( $a, $w ) {
-		$found = false;
-		foreach ( $a as $v ) {
-			if ( is_array( $v ) ) {
-				if ( is_array( $w ) ) {
-					if ( gpSlaveTest::arrayEquals( $v, $w ) ) {
-						$found = true;
-						break;
-					}
-				}
-			} else {
-				if ( $v == $w ) {
-					$found = true;
-					break;
-				}
-			}
-		}
-		
-		return $found;
-	}
-	
-    public static function setEquals( $a, $b ) {
-		if ( count($a) != count($b) ) return false;
-		
-		foreach ( $a as $v ) {
-			if ( !gpSlaveTest::setContains($b, $v) ) {
-				return false;
-			}
-		}
-		
-		return true;
-	}
-    
-    public static function arrayEquals( $a, $b ) {
-		if ( count($a) != count($b) ) return false;
-		
-		foreach ( $a as $k => $v ) {
-			$w = $b[$k];
-			
-			if ( is_array( $v ) ) {
-				//WARNING: no protection against circular array references
-				if ( !is_array($w) || !gpSlaveTest::arrayEquals( $w, $v ) ) {
-					return false;
-				}
-			} else if ( $w != $v ) {
-				return false;
-			}
-		}
-		
-		return true;
-	}    
 }
 
-$gpTestGraphCorePath = '/home/daniel/src/graphserv/graphcore/graphcore'; #FIXME: hardcoded path
-
-#$gpTestGraphCorePath = 'tee /tmp/graphcore.in | /home/daniel/src/graphserv/graphcore/graphcore | tee /tmp/graphcore.out';

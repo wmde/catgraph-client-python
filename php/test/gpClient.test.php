@@ -1,18 +1,25 @@
 <?php
+require_once('gpTestBase.php');
 
-require_once('gpSlave.test.php');
- 
-class gpClientTest extends gpSlaveTest
+$gpTestGraphName = 'test' . getmypid();
+$gpTestFilePrefix = '/tmp/gptest-' . getmypid();
+
+class gpClientTest extends gpConnectionTestBase
 {
 	public function setUp() {
 		global $gpTestAdmin, $gpTestAdminPassword;
 		global $gpTestGraphName;
 		
-		$this->gp = $this->newConnection();
+		$this->gp = $this->newConnection(); //FIXME: show config/setup error if connection fails!
 		
 		$this->gp->authorize( 'password', "$gpTestAdmin:$gpTestAdminPassword" );
+		$this->assertStatus('OK'); //FIXME: better error message, this is a config/setup error, not an assertion failure!
+		
 		$this->gp->create_graph( $gpTestGraphName );
+		$this->assertStatus('OK'); //FIXME: better error message, this is a config/setup error, not an assertion failure!
+
 		$this->gp->use_graph( $gpTestGraphName );
+		$this->assertStatus('OK'); //FIXME: better error message, this is a config/setup error, not an assertion failure!
 	}
 	
 	public function newConnection() {
@@ -28,8 +35,10 @@ class gpClientTest extends gpSlaveTest
 		global $gpTestGraphName;
 		
 		$this->gp->try_drop_graph( $gpTestGraphName );
+		parent::tearDown();
 	}
 
+	//// Server Functions ///////////////////////////////////////////////////////
 	public function testCreateGraph() {
 		global $gpTestGraphName;
 		
@@ -161,18 +170,6 @@ class gpClientTest extends gpSlaveTest
 
 }
 
-//TODO: start server instance here! let it die when the test script dies.
+//TODO: (optionally) start server instance here! let it die when the test script dies.
 
-#FIXME: hardcoded server...
-
-$gpTestGraphServHost = 'localhost';
-$gpTestGraphServPort = GP_PORT;
-$gpTestGraphName = 'test' . getmypid();
-$gpTestFilePrefix = '/tmp/gptest-' . getmypid();
-
-$gpTestAdmin = 'fred';
-$gpTestAdminPassword = 'test';
-
-$gpTestMaster = 'jules';
-$gpTestMasterPassword = 'test';
-
+//TODO: CLI interface behaviour of server (port config, etc)
