@@ -65,6 +65,13 @@ abstract class gpConnectionTestBase extends PHPUnit_Framework_TestCase
 		$this->assertEquals( $stats[$field], $value, "status[$field]" );
     }
     
+    public function assertSessionValue($field, $value ) {
+		$stats = $this->gp->capture_session_info();
+		$stats = pairs2map( $stats );
+		
+		$this->assertEquals( $stats[$field], $value, "session_info[$field]" );
+    }
+    
     public function assertStatus($value, $mssage = null) {
 		$status = $this->gp->getStatus();
 		
@@ -185,8 +192,22 @@ abstract class gpClientTestBase extends gpConnectionTestBase
 	
 	public function tearDown() {
 		global $gpTestGraphName;
+		global $gpTestAdmin, $gpTestAdminPassword;
 		
-		$this->gp->try_drop_graph( $gpTestGraphName );
+		try {
+			$this->gp->drop_graph( $gpTestGraphName );
+		} catch ( gpProtocolException $ex ) {
+			//failed to remove graph, maybe the connection is gone? try again.
+			
+			try {
+				$gp = $this->newConnection(); 
+				$gp->authorize( 'password', "$gpTestAdmin:$gpTestAdminPassword" );
+				$gp->drop_graph( $gpTestGraphName );
+			} catch ( gpException $ex ) {
+				// just give up
+			}
+		}
+		
 		parent::tearDown();
 	}
 

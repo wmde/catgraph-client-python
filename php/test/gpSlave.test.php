@@ -123,7 +123,6 @@ class gpSlaveTest extends gpSlaveTestBase
 		$this->assertCommandRejected( '<x>y' );
 		$this->assertCommandRejected( array(' <x>y ') );
 
-		$this->assertCommandRejected( 'a:b' ); //NOTE: this one is pretty special!
 		$this->assertCommandRejected( array('a:b') );
 		
 		$this->assertCommandAccepted( 'x' );
@@ -251,7 +250,7 @@ class gpSlaveTest extends gpSlaveTestBase
 	public function testFileSink() {
 		
 		//set up the sink
-		$f = tempnam(sys_get_temp_dir(), '-gp.test.data');
+		$f = tempnam(sys_get_temp_dir(), 'gpt');
 		$sink = new gpFileSink($f);
 		
 		//generate output

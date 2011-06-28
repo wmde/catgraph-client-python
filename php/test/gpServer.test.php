@@ -117,14 +117,14 @@ class gpServerTest extends gpClientTestBase
 	public function testListGraphs() {
 		global $gpTestGraphName;
 
-		$gp = $this->newConnection();
+		$gp2 = $this->newConnection();
 		
-		$graphs = $gp->capture_list_graphs();
+		$graphs = $gp2->capture_list_graphs();
 		$graphs = array_column( $graphs, 0 );
 		$this->assertTrue( in_array( $gpTestGraphName, $graphs ), "test table $gpTestGraphName should be in the list" );
 		
 		$this->gp->drop_graph($gpTestGraphName);
-		$graphs = $gp->capture_list_graphs();
+		$graphs = $gp2->capture_list_graphs();
 		#print "graphs: " . var_export($graphs, true) . "\n";
 		
 		$graphs = array_column( $graphs, 0 );
@@ -137,11 +137,57 @@ class gpServerTest extends gpClientTestBase
 	}
 
 	public function testShutdown() {
+		global $gpTestGraphName;
+		
+		$gp2 = $this->newConnection();
+		$gp2->use_graph($gpTestGraphName);
+		$gp2->stats();
 
+		$this->assertSessionValue('ConnectedGraph', $gpTestGraphName);
+		
+		$this->gp->shutdown(); // <------------------
+		$this->assertSessionValue('ConnectedGraph', 'None');
+		
+		$this->gp->try_stats();
+		$this->assertEquals( 'FAILED', $this->gp->getStatus(), 'fetching stats should fail after shutdown' );
+		
+		$gp2->try_stats();
+		$this->assertEquals( 'FAILED', $gp2->getStatus(), 'fetching stats should fail after shutdown' );
+		$gp2->close();
+		
+		$gp3 = $this->newConnection();
+		$gp3->try_use_graph($gpTestGraphName);
+		$this->assertEquals( 'FAILED', $gp3->getStatus(), 'graph should be unavailable after shutdown' );
+		$gp3->close();
 	}
 
 	public function testQuit() {
+		global $gpTestGraphName;
+		
+		$gp2 = $this->newConnection();
+		$gp2->use_graph($gpTestGraphName);
+		$gp2->stats();
 
+		$this->assertSessionValue('ConnectedGraph', $gpTestGraphName);
+		
+		$this->gp->quit();  // <------------------
+		$this->assertStatus('OK');
+		
+		try {
+			$this->gp->try_stats();
+			$this->fail( 'connection should be unusable after quit' );
+		} catch ( gpProtocolException $e ) {
+			//ok
+		}
+		
+		$gp2->stats();
+		$this->assertEquals( 'OK', $gp2->getStatus(), 'connection should still be usable by others after quit.' );
+		$gp2->close();
+		
+		$gp3 = $this->newConnection();
+		$gp3->use_graph($gpTestGraphName);
+		$this->assertEquals( 'OK', $gp3->getStatus(), 'graph should still be available to others after quit.' );
+		$gp3->close();
 	}
 
 	//// privileges //////////////////////////////////////////////////////////
@@ -189,8 +235,60 @@ class gpServerTest extends gpClientTestBase
 		$this->assertEquals( $ok, 'OK', "should be able to drop graph with admin privileges" );
 	}
 
-	public function testPipingPrivilege() {
+	public function testInputPipingPrivilege() {
+		global $gpTestGraphName, $gpTestGraphServHost;
+		global $gpTestAdmin, $gpTestAdminPassword;
+		global $gpTestMaster, $gpTestMasterPassword;
 		
+		//XXX: this uses local files, so it will always fail if the server isn't on localhost!
+		if ( $gpTestGraphServHost != 'localhost' ) return; 
+		
+		$f = dirname(__FILE__) . '/gp.test.data';
+		
+		$gp = $this->newConnection();
+		$gp->use_graph($gpTestGraphName);
+		$gp->allowPipes = true;
+		
+		$gp->authorize('password', "$gpTestMaster:$gpTestMasterPassword");
+		
+		try {
+			$ok = $gp->exec("add-arcs < $f"); 
+			$this->fail( "should not be able to pipe without admin privileges!" );
+		} catch ( gpProcessorException $ex ) {
+			$this->assertEquals( 'DENIED', $gp->getStatus(), "server should deny piping. Instead, we got this error: " . $ex->getMessage() );
+		}
+
+		$gp->authorize('password', "$gpTestAdmin:$gpTestAdminPassword"); // re-authenticate
+		$ok = $gp->exec("add-arcs < $f"); 
+		$this->assertEquals( $ok, 'OK', "should be able to pipe with admin privileges" );
+	}
+
+	public function testOutputPipingPrivilege() {
+		global $gpTestGraphName, $gpTestGraphServHost;
+		global $gpTestAdmin, $gpTestAdminPassword;
+		global $gpTestMaster, $gpTestMasterPassword;
+		
+		//XXX: this uses local files, so it will always fail if the server isn't on localhost!
+		if ( $gpTestGraphServHost != 'localhost' ) return; 
+		
+		$f = tempnam(sys_get_temp_dir(), 'gpt');
+		
+		$gp = $this->newConnection();
+		$gp->use_graph($gpTestGraphName);
+		$gp->allowPipes = true;
+		
+		try {
+			$ok = $gp->exec("list-roots > $f"); 
+			$this->fail( "should not be able to pipe without admin privileges!" );
+		} catch ( gpProcessorException $ex ) {
+			$this->assertEquals( 'DENIED', $gp->getStatus(), "server should deny piping. Instead, we got this error: " . $ex->getMessage() );
+		}
+
+		$gp->authorize('password', "$gpTestAdmin:$gpTestAdminPassword"); // re-authenticate
+		$ok = $gp->exec("list-roots > $f"); 
+		$this->assertEquals( $ok, 'OK', "should be able to pipe with admin privileges" );
+		
+		@unlink($f); //cleanup
 	}
 
 	public function testAddArcsPrivilege() {
@@ -202,12 +300,48 @@ class gpServerTest extends gpClientTestBase
 		
 	}
 
-	public function testClearPrivilege() {
+	public function testReplaceSuccessorsPrivilege() {
 		
 	}
 
-	public function testReplaceSuccessorsPrivilege() {
+	public function testClearPrivilege() {
+		global $gpTestGraphName;
+		global $gpTestAdmin, $gpTestAdminPassword;
+		global $gpTestMaster, $gpTestMasterPassword;
 		
+		$gp = $this->newConnection();
+		$gp->use_graph($gpTestGraphName);
+		
+		$ok = $gp->try_clear();
+		$this->assertFalse( $ok, "should not be able to clear a graph without authorizing" );
+
+		$gp->authorize('password', "$gpTestMaster:$gpTestMasterPassword");
+		$ok = $gp->clear();
+		$this->assertEquals( $ok, 'OK', "should be able to clear graph with updater privileges" );
+
+		$gp->authorize('password', "$gpTestAdmin:$gpTestAdminPassword"); // re-authenticate
+		$ok = $gp->clear();
+		$this->assertEquals( $ok, 'OK', "should be able to clear graph with admin privileges" );
+	}
+
+	public function testShutdownPrivilege() {
+		global $gpTestGraphName;
+		global $gpTestAdmin, $gpTestAdminPassword;
+		global $gpTestMaster, $gpTestMasterPassword;
+		
+		$gp = $this->newConnection();
+		$gp->use_graph($gpTestGraphName);
+		
+		$ok = $gp->try_shutdown();
+		$this->assertFalse( $ok, "should not be able to shut down a graph without authorizing" );
+
+		$gp->authorize('password', "$gpTestMaster:$gpTestMasterPassword");
+		$ok = $gp->try_shutdown();
+		$this->assertFalse( $ok, "should not be able to shut down a graph without admin privileges" );
+
+		$gp->authorize('password', "$gpTestAdmin:$gpTestAdminPassword"); // re-authenticate
+		$ok = $gp->try_shutdown();
+		$this->assertEquals( $ok, 'OK', "should be able to shut down graph with admin privileges" );
 	}
 
 

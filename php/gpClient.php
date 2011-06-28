@@ -358,14 +358,15 @@ abstract class gpConnection {
 			}
 			
 			$command = implode( ' ', $command );
-		} else {
-		}
+		} 
 		
 		$command = trim($command);
 		
 		if ($command == '') throw new gpUsageException("command is empty!");
 
-		if ( !self::isValidCommandString($command, $this->allowPipes) ) throw new gpUsageException("invalid command: $command");
+		if ( !self::isValidCommandString($command) ) throw new gpUsageException("invalid command: $command");
+
+		if ( !$this->allowPipes && preg_match('/[<>]/', $command) ) throw new gpUsageException("command denied, pipes are disallowed by allowPipes = false; command: $command");
 		
 		if ( $source && !preg_match('/:$/', $command) ) {
 			$command .= ':';
@@ -445,11 +446,8 @@ abstract class gpConnection {
 		return preg_match('/^[a-zA-Z_][-\w]*$/', $name);
 	}
 	
-	public static function isValidCommandString( $command, $allowPipes = false ) {
-		if ( !$allowPipes && preg_match('/[<>]/', $command) ) return false;
-		
+	public static function isValidCommandString( $command ) {
 		if ( !preg_match('/^[a-zA-Z_][-\w]*($|[\s!&|<>#:])/', $command) ) return false; // must start with a valid command
-		if ( preg_match('/:\s*[^\s]/', $command) ) return false; // ":" can only ocurr at the end, so if there's anything after the ":", fail
 		
 		return !preg_match('/[\0-\x1F\x80-\xFF]/', $command);
 	}
@@ -457,7 +455,7 @@ abstract class gpConnection {
 	public static function isValidCommandArgument( $arg, $strict = true ) {
 		if ( $arg === '' || $arg === false || $arg === null ) return false;
 
-		if ( $strict ) return preg_match('/^\w[-\w]*$/', $arg);
+		if ( $strict ) return preg_match('/^\w[-\w]*(:\w[-\w]*)?$/', $arg); //XXX: the ":" is needed for user:passwd auth. not pretty. 
 		
 		return !preg_match('/[\0-\x1F\x80-\xFF:|<>!&#]/', $arg); //low chars, high chars, and operators.
 	}
