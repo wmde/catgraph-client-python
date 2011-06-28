@@ -43,6 +43,8 @@ class gpServerTest extends gpClientTestBase
 	public function testCreateNameRestrictions() {
 		global $gpTestGraphName;
 		
+		$this->gp->strictArguments = false; // disable strict client-side validation
+		
 		try {
 			$n = '';
 			$ok = $this->gp->create_graph($n);
@@ -192,6 +194,7 @@ class gpServerTest extends gpClientTestBase
 	}
 
 	public function testAddArcsPrivilege() {
+		//TODO: remember to also test protocol re-sync after insertion was denied. server must slurp all data!
 		
 	}
 

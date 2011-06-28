@@ -75,203 +75,150 @@ class gpSlaveTest extends gpSlaveTestBase
 		//should not trigger an exception...
 	}
 
+	private function assertCommandAccepted( $cmd, $src = null, $sink = null ) {
+		$s = preg_replace('/\s+/s', ' ', var_export( $cmd, true ));
+		
+		try {
+			$x = $this->gp->exec($cmd, $src, $sink);
+			throw new Exception("dummy command should have failed in core: $s");
+		} catch ( gpUsageException $e ) {
+			$this->fail("command syntax should be accepted by client: $s");
+		} catch ( gpProcessorException $e ) {
+			//ok, should fail in core, but be accepted by client side validator
+		}
+	}
+	
+	private function assertCommandRejected( $cmd, $src = null, $sink = null ) {
+		$s = preg_replace('/\s+/s', ' ', var_export( $cmd, true ));
+		
+		try {
+			$x = $this->gp->exec($cmd, $src, $sink);
+			$this->fail("bad command should be detected: $s");
+		} catch ( gpUsageException $e ) {
+			//ok
+		} catch ( gpProcessorException $e ) {
+			$this->fail("bad command should have been detected by the client: $s; core message: " . $e->getMessage());
+		}
+	}
+	
 	public function testCommandValidation() {
-		try {
-			$s = '';
-			$x = $this->gp->exec($s);
-			$this->fail("empty command should be detected");
-		} catch ( gpUsageException $e ) {
-			//ok
-		} catch ( gpProcessorException $e ) {
-			$this->fail("empty command should hzave been detected by the client; core message: " . $e->getMessage());
-		}
+		$this->assertCommandRejected( '' );
+		$this->assertCommandRejected( array('', 23) );
 		
-		try {
-			$s = '';
-			$x = $this->gp->exec( array($s, 'xxx') );
-			$this->fail("empty command name should be detected");
-		} catch ( gpUsageException $e ) {
-			//ok
-		} catch ( gpProcessorException $e ) {
-			$this->fail("empty command name should hzave been detected by the client; core message: " . $e->getMessage());
-		}
+		$this->assertCommandRejected( null );
+		$this->assertCommandRejected( array(null, 23) );
 		
-		try {
-			$s = '123';
-			$x = $this->gp->exec($s);
-			$this->fail("bad command should be detected: $s");
-		} catch ( gpUsageException $e ) {
-			//ok
-		} catch ( gpProcessorException $e ) {
-			$this->fail("bad command should have been detected by the client: $s; core message: " . $e->getMessage());
-		}
+		$this->assertCommandRejected( false );
+		$this->assertCommandRejected( array(false, 23) );
+
+		$this->assertCommandRejected( array() );
+		$this->assertCommandRejected( array( array('foo') ) );
+
+		$this->assertCommandRejected( '123' );
+		$this->assertCommandRejected( array('123') );
 		
-		try {
-			$s = '123';
-			$x = $this->gp->exec( array($s) );
-			$this->fail("bad command name should be detected: $s");
-		} catch ( gpUsageException $e ) {
-			//ok
-		} catch ( gpProcessorException $e ) {
-			$this->fail("bad command name should have been detected by the client: $s; core message: " . $e->getMessage());
-		}
+		$this->assertCommandAccepted( ' x ' );
+		$this->assertCommandRejected( array(' x ') );
 		
-		try {
-			$s = ' x ';
-			$x = $this->gp->exec($s);
-			$this->fail("bad command should be detected: $s");
-		} catch ( gpUsageException $e ) {
-			//ok
-		} catch ( gpProcessorException $e ) {
-			$this->fail("bad command should have been detected by the client: $s; core message: " . $e->getMessage());
-		}
+		$this->assertCommandRejected( '<x>y' );
+		$this->assertCommandRejected( array(' <x>y ') );
+
+		$this->assertCommandRejected( 'a:b' ); //NOTE: this one is pretty special!
+		$this->assertCommandRejected( array('a:b') );
 		
-		try {
-			$s = ' x ';
-			$x = $this->gp->exec( array($s) );
-			$this->fail("bad command name should be detected: $s");
-		} catch ( gpUsageException $e ) {
-			//ok
-		} catch ( gpProcessorException $e ) {
-			$this->fail("bad command name should have been detected by the client: $s; core message: " . $e->getMessage());
-		}
+		$this->assertCommandAccepted( 'x' );
+		$this->assertCommandAccepted( array('x') );
 		
-		try {
-			$s = '<x>y';
-			$x = $this->gp->exec($s);
-			$this->fail("bad command should be detected: $s");
-		} catch ( gpUsageException $e ) {
-			//ok
-		} catch ( gpProcessorException $e ) {
-			$this->fail("bad command should have been detected by the client: $s; core message: " . $e->getMessage());
-		}
+		$this->assertCommandAccepted( 'xyz' );
+		$this->assertCommandAccepted( array('xyz') );
 		
-		try {
-			$s = '<x>y';
-			$x = $this->gp->exec( array($s) );
-			$this->fail("bad command name should be detected: $s");
-		} catch ( gpUsageException $e ) {
-			//ok
-		} catch ( gpProcessorException $e ) {
-			$this->fail("bad command name should have been detected by the client: $s; core message: " . $e->getMessage());
-		}
+		$this->assertCommandAccepted( 'x7y' );
+		$this->assertCommandAccepted( array('x7y') );
 		
-		$chars = " \r\n\t\0\x09^!\"§\$%&/()[]\{\}=?'#`\\*+~.:,;<>|@\xDD";
+		$chars = "\r\n\t\0\x09^\"§\$%/()[]\{\}=?'`\\*+~.,;@\xDD";
 		for ( $i = 0; $i<strlen($chars); $i++ ) {
 			$ch = $chars[$i];
-			
-			try {
-				$s = "a{$ch}b";
-				$x = $this->gp->exec($s);
-				$this->fail("bad command should be detected: $s");
-			} catch ( gpUsageException $e ) {
-				//ok
-			} catch ( gpProcessorException $e ) {
-				$this->fail("bad command should have been detected by the client: $s; core message: " . $e->getMessage());
-			}
-
-			try {
-				$s = "a{$ch}b";
-				$x = $this->gp->exec( array($s) );
-				$this->fail("bad command name should be detected: $s");
-			} catch ( gpUsageException $e ) {
-				//ok
-			} catch ( gpProcessorException $e ) {
-				$this->fail("bad command name should have been detected by the client: $s; core message: " . $e->getMessage());
-			}
+			$s = "a{$ch}b";
+		
+			$this->assertCommandRejected( $s );
+			$this->assertCommandRejected( array($s) );
+		}
+		
+		$chars = " !&<>|#:";
+		for ( $i = 0; $i<strlen($chars); $i++ ) {
+			$ch = $chars[$i];
+			$s = "a{$ch}b";
+		
+			$this->assertCommandRejected( array($s) );
 		}
 		
 		// operators -----------------------------------------
-		try {
-			$s = 'clear && clear';
-			$x = $this->gp->exec($s);
-		} catch ( gpUsageException $e ) {
-			$this->fail("operators should be allowd! $s");
-		} catch ( gpProcessorException $e ) {
-			//ok, should fail in core
-		}
-		
-		try {
-			$s = 'clear !&& clear';
-			$x = $this->gp->exec($s);
-		} catch ( gpUsageException $e ) {
-			$this->fail("operators should be allowd! $s");
-		} catch ( gpProcessorException $e ) {
-			//ok, should fail in core
-		}
+		$this->assertCommandAccepted( 'clear && clear' );
+		$this->assertCommandAccepted( 'clear !&& clear' );
+
 		
 		// pipes disallowed -----------------------------------------
 		$this->gp->allowPipes = false;
-		
-		try {
-			$s = 'clear > /tmp/test';
-			$x = $this->gp->exec($s);
-			$this->fail("pipe should be disallowed: $s");
-		} catch ( gpUsageException $e ) {
-			//ok
-		} catch ( gpProcessorException $e ) {
-			$this->fail("pipe should be disallowed by client: $s; core message: " . $e->getMessage());
-		}
-		
-		try {
-			$s = 'clear < /tmp/test';
-			$x = $this->gp->exec($s);
-			$this->fail("pipe should be disallowed: $s");
-		} catch ( gpUsageException $e ) {
-			//ok
-		} catch ( gpProcessorException $e ) {
-			$this->fail("pipe should be disallowed by client: $s; core message: " . $e->getMessage());
-		}
+
+		$this->assertCommandRejected( 'clear > /tmp/test' );
+		$this->assertCommandRejected( 'clear < /tmp/test' );
 		
 		// pipes allowed -----------------------------------------
 		$this->gp->allowPipes = true;
 		
-		try {
-			$s = 'clear > /tmp/test';
-			$x = $this->gp->exec($s);
-			throw new Exception("should fail in core, because clear has no output!");
-		} catch ( gpUsageException $e ) {
-			$this->fail("pipe should be allowed by client: $s");
-		} catch ( gpProcessorException $e ) {
-			//ok, should fail in core, because clear has no output
-		}
-		
-		try {
-			$s = 'clear < /tmp/test';
-			$x = $this->gp->exec($s);
-			throw new Exception("should fail in core, because clear accepts no input!");
-		} catch ( gpUsageException $e ) {
-			$this->fail("pipe should be allowed by client: $s");
-		} catch ( gpProcessorException $e ) {
-			//ok, should fail in core, because clear accepts no input
-		}
+		$this->assertCommandAccepted( 'clear > /tmp/test' );
+		$this->assertCommandAccepted( 'clear < /tmp/test' );
 		
 		// pipes conflict -----------------------------------------
-		
-		try {
-			$s = 'clear > /tmp/test';
-			$x = $this->gp->exec($s, null, gpNullSink::$instance);
-			$this->fail("pipe should be disallowed if sink is given: $s");
-		} catch ( gpUsageException $e ) {
-			//ok
-		} catch ( gpProcessorException $e ) {
-			$this->fail("pipe should be disallowed by client if sink is given: $s; core message: " . $e->getMessage());
-		}
-		
-		try {
-			$s = 'clear < /tmp/test';
-			$x = $this->gp->exec($s, gpNullSource::$instance, null);
-			$this->fail("pipe should be disallowed if source is given: $s");
-		} catch ( gpUsageException $e ) {
-			//ok
-		} catch ( gpProcessorException $e ) {
-			$this->fail("pipe should be disallowed by client if source is given: $s; core message: " . $e->getMessage());
-		}
-		
+		$this->assertCommandRejected( 'clear > /tmp/test', null, gpNullSink::$instance );
+		$this->assertCommandRejected( 'clear < /tmp/test', gpNullSource::$instance, null );
 	}
 
+	private function assertArgumentAccepted( $arg ) {
+		$s = preg_replace('/\s+/s', ' ', var_export( $arg, true ));
+		
+		try {
+			$x = $this->gp->exec( array('foo', $arg) );
+			throw new Exception("dummy command should have failed in core: foo $s");
+		} catch ( gpUsageException $e ) {
+			$this->fail("argument should be accepted by client: $s");
+		} catch ( gpProcessorException $e ) {
+			//ok, should fail in core, but be accepted by client side validator
+		}
+	}
+	
+	private function assertArgumentRejected( $arg ) {
+		$s = preg_replace('/\s+/s', ' ', var_export( $arg, true ));
+		
+		try {
+			$x = $this->gp->exec( array('foo', $arg) );
+			$this->fail("malformed argument should be detected: $s");
+		} catch ( gpUsageException $e ) {
+			//ok
+		} catch ( gpProcessorException $e ) {
+			$this->fail("malformed argument should have been detected by the client: $s; core message: " . $e->getMessage());
+		}
+	}
+	
 	public function testArgumentValidation() {
-		//TODO!!!
+		$this->assertArgumentRejected( '' );
+		$this->assertArgumentRejected( null );
+		$this->assertArgumentRejected( false );
+		$this->assertArgumentRejected( ' x ' );
+		
+		$this->assertArgumentAccepted( '123' );
+		$this->assertArgumentAccepted( 'x' );
+		$this->assertArgumentAccepted( 'xyz' );
+		$this->assertArgumentAccepted( 'x7y' );
+		$this->assertArgumentAccepted( '7x7' );
+		
+		$chars = " \r\n\t\0\x09^!\"§\$%&/()[]\{\}=?'#`\\*+~.:,;<>|@\xDD";
+		for ( $i = 0; $i<strlen($chars); $i++ ) {
+			$ch = $chars[$i];
+			$s = "a{$ch}b";
+		
+			$this->assertArgumentRejected( $s );
+		}
 	}
 
     //// Client Lib I/O ///////////////////////////////////////////////////////////////

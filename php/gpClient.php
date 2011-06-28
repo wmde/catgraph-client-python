@@ -1,6 +1,8 @@
 <?php
-define( 'GP_LINEBREAK', "\n" );
+define( 'GP_LINEBREAK', "\n" ); //XXX: should be \r\n, as per spec?!
 define( 'GP_PORT', 6666 );
+
+define( 'GP_CLIENT_PROTOCOL_VERSION', 2 );
 
 class gpException extends Exception {
 	function __construct( $msg ) {
@@ -239,6 +241,17 @@ abstract class gpConnection {
 		// noop
 	} 
 	
+	public function getProtocolVersion() {
+		$this->protocol_version();
+		$version = trim($this->statusMessage);
+		return $version;
+	} 
+	
+	public function checkProtocolVersion() {
+		$version = $this->getProtocolVersion();
+		if ( $version != GP_CLIENT_PROTOCOL_VERSION ) throw new gpProtocolException( "Bad protocol version: expected " . GP_CLIENT_PROTOCOL_VERSION . ", but peer uses " . $version );
+	} 
+	
 	public function ping() {
 		$re = $this->protocol_version();
 		$this->trace(__METHOD__, $re);
@@ -321,14 +334,23 @@ abstract class gpConnection {
 			
 			throw new gpProtocolException("connection closed by peer!");
 		}
-
+		
 		if ( is_array( $command ) ) {
-			if ( $command && !self::isValidCommandName( $command[0] ) ) {
-				throw new gpUsageException("invalid command name: " . $command[0]);
+			if ( !$command ) {
+				throw new gpUsageException("empty command!");
+			}
+			
+			$c = $command[0];
+			if ( is_array( $c ) || is_object( $c ) ) throw new gpUsageException("invalid command type: " . gettype($c));
+				
+			if ( !self::isValidCommandName( $c ) ) {
+				throw new gpUsageException("invalid command name: " . $c);
 			}
 			
 			$strictArgs = $this->strictArguments;
 			foreach ( $command as $c ) {
+				if ( is_array( $c ) || is_object( $c ) ) throw new gpUsageException("invalid argument type: " . gettype($c));
+				
 				if ( $this->allowPipes && preg_match('/^[<>]$/', $c) ) $strictArgs = false; // pipe, allow lenient args after that
 				if ( $this->allowPipes && preg_match('/^[|&!:<>]+$/', $c) ) continue; //operator
 				
@@ -368,6 +390,7 @@ abstract class gpConnection {
 			$this->copyFromSource( $source );
 		}
 		
+		//FIXME: for thecommand "a:b", we get stuck here. why??
 		$re = fgets( $this->hin, 1024 ); //FIXME: what if response is too long?
 		
 		if ( $re === '' || $re === false || $re === null ) {
@@ -419,13 +442,14 @@ abstract class gpConnection {
 	}
 	
 	public static function isValidCommandName( $name ) {
-		return preg_match('/[a-zA-Z_][-\w]+/', $name);
+		return preg_match('/^[a-zA-Z_][-\w]*$/', $name);
 	}
 	
 	public static function isValidCommandString( $command, $allowPipes = false ) {
 		if ( !$allowPipes && preg_match('/[<>]/', $command) ) return false;
 		
-		if ( !preg_match('/^[a-zA-Z_][-\w]+($|[\s!:&|<>#])/', $command) ) return false; // must start with a valid command
+		if ( !preg_match('/^[a-zA-Z_][-\w]*($|[\s!&|<>#:])/', $command) ) return false; // must start with a valid command
+		if ( preg_match('/:\s*[^\s]/', $command) ) return false; // ":" can only ocurr at the end, so if there's anything after the ":", fail
 		
 		return !preg_match('/[\0-\x1F\x80-\xFF]/', $command);
 	}
@@ -433,7 +457,7 @@ abstract class gpConnection {
 	public static function isValidCommandArgument( $arg, $strict = true ) {
 		if ( $arg === '' || $arg === false || $arg === null ) return false;
 
-		if ( $strict ) return preg_match('/\w[-\w]+/', $arg);
+		if ( $strict ) return preg_match('/^\w[-\w]*$/', $arg);
 		
 		return !preg_match('/[\0-\x1F\x80-\xFF:|<>!&#]/', $arg); //low chars, high chars, and operators.
 	}
@@ -555,6 +579,8 @@ class gpClient extends gpConnection {
 			}
 		}
 		
+		$this->checkProtocolVersion();
+		
 		return true;
 	}
 	
@@ -634,8 +660,9 @@ class gpSlave extends gpConnection {
 		$this->trace(__METHOD__, "reading from " . $this->hin );
 		$this->trace(__METHOD__, "writing to " . $this->hout );
 
-		usleep( 100 * 1000 ); //FIXME: HACK! wait 1/10th of a second to see if the command actually starts
-		$this->checkPeer();
+		usleep( 100 * 1000 ); //XXX: NASTY HACK! wait 1/10th of a second to see if the command actually starts
+		
+		$this->checkProtocolVersion();
 
 		return true;
 	}
