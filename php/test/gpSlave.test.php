@@ -123,7 +123,7 @@ class gpSlaveTest extends gpSlaveTestBase
 		$this->assertCommandRejected( '<x>y' );
 		$this->assertCommandRejected( array(' <x>y ') );
 
-		$this->assertCommandRejected( array('a:b') );
+		$this->assertCommandRejected( array('a:b') ); // 'a:b' is legal as an argument, but nut as a command name!
 		
 		$this->assertCommandAccepted( 'x' );
 		$this->assertCommandAccepted( array('x') );
@@ -205,13 +205,17 @@ class gpSlaveTest extends gpSlaveTestBase
 		$this->assertArgumentRejected( false );
 		$this->assertArgumentRejected( ' x ' );
 		
+		#FIXME: testing "a:b" as an argument causes a lockup. i don't see why. it works on the command line. and authe works too. WTF.
+		#$this->gp->debug = true;
+		#$this->assertArgumentAccepted( 'x:y' ); // needed for password auth!
+		
 		$this->assertArgumentAccepted( '123' );
 		$this->assertArgumentAccepted( 'x' );
 		$this->assertArgumentAccepted( 'xyz' );
 		$this->assertArgumentAccepted( 'x7y' );
 		$this->assertArgumentAccepted( '7x7' );
 		
-		$chars = " \r\n\t\0\x09^!\"§\$%&/()[]\{\}=?'#`\\*+~.:,;<>|@\xDD";
+		$chars = " \r\n\t\0\x09^!\"§\$%&/()[]\{\}=?'#`\\*+~.,;<>|@\xDD";
 		for ( $i = 0; $i<strlen($chars); $i++ ) {
 			$ch = $chars[$i];
 			$s = "a{$ch}b";
@@ -284,6 +288,24 @@ class gpSlaveTest extends gpSlaveTestBase
 
 		//cleanup
 		@unlink($f);
+	}
+
+	public function testNullSource() {
+		$this->gp->add_arcs( gpNullSource::$instance );
+		$this->assertStatus( 'OK' );
+	}
+    
+	public function testNullSink() {
+		//generate output
+		$this->gp->add_arcs( array(
+			array( 1, 11 ),
+			array( 1, 12 ),
+			array( 11, 111 ),
+			array( 11, 112 ),
+		) );
+
+		$ok = $this->gp->traverse_successors(1, 2, gpNullSink::$instance);
+		$this->assertStatus('OK');
 	}
 
     //// Slave Connection Tests ///////////////////////////////////////////////////

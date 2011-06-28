@@ -319,6 +319,8 @@ abstract class gpConnection {
     }
 
 	public function exec( $command, gpDataSource $source = null, gpDataSink $sink = null, &$has_output = null ) {
+		$this->trace(__METHOD__, "BEGIN");
+		
 		if ( $this->tainted ) {
 			throw new gpProtocolException("connection tainted by previous error!");
 		}
@@ -361,8 +363,9 @@ abstract class gpConnection {
 		} 
 		
 		$command = trim($command);
-		
 		if ($command == '') throw new gpUsageException("command is empty!");
+
+		$this->trace(__METHOD__, "command", $command );
 
 		if ( !self::isValidCommandString($command) ) throw new gpUsageException("invalid command: $command");
 
@@ -384,8 +387,11 @@ abstract class gpConnection {
 			throw new gpUsageException("can't use data output file and a local data sink at the same time! $command");
 		}
 		
-		fputs( $this->hout, $command . "\n" ); #FIXME: "\r\n"???
+		$this->trace(__METHOD__, ">>> ", $command);
+		fputs( $this->hout, $command . GP_LINEBREAK ); 
 		fflush( $this->hout );
+		
+		$this->trace(__METHOD__, "source", $source == null ? null : get_class($source));
 		
 		if ( $source ) {
 			$this->copyFromSource( $source );
@@ -393,6 +399,7 @@ abstract class gpConnection {
 		
 		//FIXME: for thecommand "a:b", we get stuck here. why??
 		$re = fgets( $this->hin, 1024 ); //FIXME: what if response is too long?
+		$this->trace(__METHOD__, "<<< ", $re);
 		
 		if ( $re === '' || $re === false || $re === null ) {
 			$this->tainted = true;
@@ -407,7 +414,6 @@ abstract class gpConnection {
 		}
 		
 		$re = trim($re);
-		$this->trace(__METHOD__, "response", $re);
 
 		$this->response = $re;
 			
@@ -424,6 +430,8 @@ abstract class gpConnection {
 		if ( $this->status != 'OK' && $this->status != 'NONE' ) {
 			throw new gpProcessorException( $this->status, $m[2], $command );
 		}
+		
+		$this->trace(__METHOD__, "sink", $sink == null ? null : get_class($sink));
 		
 		if ( preg_match( '/: *$/', $re ) ) {
 			if ( !$sink ) $sink = gpNullSink::$instance; //note: we need to slurp the result in any case!
@@ -499,12 +507,16 @@ abstract class gpConnection {
 	protected function copyFromSource( gpDataSource $source ) {
 		$sink = new gpPipeSink( $this->hout );
 		
-		gpConnection::copy( $source, $sink );
+		$this->trace(__METHOD__, "source", get_class($source));
+		
+		$this->copy( $source, $sink, ' > ' );
 
 		// $source->close(); // to close or not to close...
 
 		fputs($this->hout, GP_LINEBREAK); // blank line
 		fflush( $this->hout );
+
+		$this->trace(__METHOD__, "copy complete.");
 
 		/*
 		while ( $row = $source->nextRow() ) {
@@ -520,8 +532,12 @@ abstract class gpConnection {
 	protected function copyToSink( gpDataSink $sink = null ) {
 		$source = new gpPipeSource( $this->hin );
 		
-		gpConnection::copy( $source, $sink );
+		$this->trace(__METHOD__, "sink", get_class($sink));
+		
+		$this->copy( $source, $sink, ' < ' );
 
+		$this->trace(__METHOD__, "copy complete.");
+		
 		// $source->close(); // to close or not to close...
 		
 		/*
@@ -537,9 +553,14 @@ abstract class gpConnection {
 		} */
 	}
 	
-	public static function copy( gpDataSource $source, gpDataSink $sink = null ) {
+	public function copy( gpDataSource $source, gpDataSink $sink = null, $indicator = '<>' ) {
 		while ( $row = $source->nextRow() ) {
-			if ( $sink) $sink->putRow( $row );
+			if ( $sink) {
+				$sink->putRow( $row );
+				$this->trace(__METHOD__, $indicator, $row);
+			} else {
+				$this->trace(__METHOD__, "#", $row);
+			}
 		}
 	}
 	 
