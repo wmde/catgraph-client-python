@@ -255,7 +255,7 @@ class gpServerTest extends gpClientTestBase
 			$ok = $gp->exec("add-arcs < $f"); 
 			$this->fail( "should not be able to pipe without admin privileges!" );
 		} catch ( gpProcessorException $ex ) {
-			$this->assertEquals( 'DENIED', $gp->getStatus(), "server should deny piping. Instead, we got this error: " . $ex->getMessage() );
+			$this->assertEquals( 'DENIED', $gp->getStatus(), "piping should be denied, not fail. Message: " . $ex->getMessage() );
 		}
 
 		$gp->authorize('password', "$gpTestAdmin:$gpTestAdminPassword"); // re-authenticate
@@ -281,7 +281,7 @@ class gpServerTest extends gpClientTestBase
 			$ok = $gp->exec("list-roots > $f"); 
 			$this->fail( "should not be able to pipe without admin privileges!" );
 		} catch ( gpProcessorException $ex ) {
-			$this->assertEquals( 'DENIED', $gp->getStatus(), "server should deny piping. Instead, we got this error: " . $ex->getMessage() );
+			$this->assertEquals( 'DENIED', $gp->getStatus(), "piping should be denied, not fail. Message: " . $ex->getMessage() );
 		}
 
 		$gp->authorize('password', "$gpTestAdmin:$gpTestAdminPassword"); // re-authenticate
@@ -298,12 +298,13 @@ class gpServerTest extends gpClientTestBase
 		$gp = $this->newConnection();
 		$gp->use_graph($gpTestGraphName);
 		
-		$gp->try_add_arcs( array( array( 1, 11 ), array( 1, 12 ) ) );
-		$this->assertEquals( 'DENIED', $gp->getStatus(), "should not be able to add arcs without authorizing" );
+		$ok = $gp->try_add_arcs( array( array( 1, 11 ), array( 1, 12 ) ) );
+		$this->assertFalse( $ok, "should not be able to add arcs without authorizing" );
+		$this->assertEquals( 'DENIED', $gp->getStatus(), "command should be denied, not fail" );
 
 		$gp->authorize('password', "$gpTestMaster:$gpTestMasterPassword");
-		$gp->try_add_arcs( array( array( 1, 11 ), array( 1, 12 ) ) );
-		$this->assertEquals( 'OK', $gp->getStatus(), "should be able to add arcs with updater privileges" );
+		$ok = $gp->try_add_arcs( array( array( 1, 11 ), array( 1, 12 ) ) );
+		$this->assertTrue( $ok, "should be able to add arcs with updater privileges" );
 	}
 
 	public function testDeleteArcsPrivilege() {
@@ -315,12 +316,13 @@ class gpServerTest extends gpClientTestBase
 		$gp = $this->newConnection();
 		$gp->use_graph($gpTestGraphName);
 		
-		$gp->try_delete_arcs( array( array( 1, 11 ) ) );
-		$this->assertEquals( 'DENIED', $gp->getStatus(), "should not be able to delete arcs without authorizing" );
+		$ok = $gp->try_delete_arcs( array( array( 1, 11 ) ) );
+		$this->assertFalse( $ok, "should not be able to delete arcs without authorizing" );
+		$this->assertEquals( 'DENIED', $gp->getStatus(), "command should be denied, not fail" );
 
 		$gp->authorize('password', "$gpTestMaster:$gpTestMasterPassword");
-		$gp->try_delete_arcs( array( array( 1, 11 ) ) );
-		$this->assertEquals( 'OK', $gp->getStatus(), "should be able to delete arcs with updater privileges" );
+		$ok = $gp->try_delete_arcs( array( array( 1, 11 ) ) );
+		$this->assertTrue( $ok, "should be able to delete arcs with updater privileges" );
 	}
 
 	public function testReplaceSuccessorsPrivilege() {
@@ -332,12 +334,13 @@ class gpServerTest extends gpClientTestBase
 		$gp = $this->newConnection();
 		$gp->use_graph($gpTestGraphName);
 		
-		$gp->try_replace_successors( 1, array( 17 ) );
-		$this->assertEquals( 'DENIED', $gp->getStatus(), "should not be able to delete arcs without authorizing" );
+		$ok = $gp->try_replace_successors( 1, array( 17 ) );
+		$this->assertFalse( $ok, "should not be able to replace successors without authorizing" );
+		$this->assertEquals( 'DENIED', $gp->getStatus(), "command should be denied, not fail" );
 
 		$gp->authorize('password', "$gpTestMaster:$gpTestMasterPassword");
-		$gp->try_replace_successors( 1, array( 17 ) );
-		$this->assertEquals( 'OK', $gp->getStatus(), "should be able to delete arcs with updater privileges" );
+		$ok = $gp->try_replace_successors( 1, array( 17 ) );
+		$this->assertTrue( $ok, "should be able to delete arcs with updater privileges" );
 	}
 
 	public function testClearPrivilege() {
