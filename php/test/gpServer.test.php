@@ -292,16 +292,52 @@ class gpServerTest extends gpClientTestBase
 	}
 
 	public function testAddArcsPrivilege() {
-		//TODO: remember to also test protocol re-sync after insertion was denied. server must slurp all data!
+		global $gpTestGraphName;
+		global $gpTestMaster, $gpTestMasterPassword;
 		
+		$gp = $this->newConnection();
+		$gp->use_graph($gpTestGraphName);
+		
+		$gp->try_add_arcs( array( array( 1, 11 ), array( 1, 12 ) ) );
+		$this->assertEquals( 'DENIED', $gp->getStatus(), "should not be able to add arcs without authorizing" );
+
+		$gp->authorize('password', "$gpTestMaster:$gpTestMasterPassword");
+		$gp->try_add_arcs( array( array( 1, 11 ), array( 1, 12 ) ) );
+		$this->assertEquals( 'OK', $gp->getStatus(), "should be able to add arcs with updater privileges" );
 	}
 
 	public function testDeleteArcsPrivilege() {
+		global $gpTestGraphName;
+		global $gpTestMaster, $gpTestMasterPassword;
+
+		$this->gp->add_arcs( array( array( 1, 11 ),	array( 1, 12 ) ) ); //add some arcs as admin
 		
+		$gp = $this->newConnection();
+		$gp->use_graph($gpTestGraphName);
+		
+		$gp->try_delete_arcs( array( array( 1, 11 ) ) );
+		$this->assertEquals( 'DENIED', $gp->getStatus(), "should not be able to delete arcs without authorizing" );
+
+		$gp->authorize('password', "$gpTestMaster:$gpTestMasterPassword");
+		$gp->try_delete_arcs( array( array( 1, 11 ) ) );
+		$this->assertEquals( 'OK', $gp->getStatus(), "should be able to delete arcs with updater privileges" );
 	}
 
 	public function testReplaceSuccessorsPrivilege() {
+		global $gpTestGraphName;
+		global $gpTestMaster, $gpTestMasterPassword;
+
+		$this->gp->add_arcs( array( array( 1, 11 ),	array( 1, 12 ) ) ); //add some arcs as admin
 		
+		$gp = $this->newConnection();
+		$gp->use_graph($gpTestGraphName);
+		
+		$gp->try_replace_successors( 1, array( 17 ) );
+		$this->assertEquals( 'DENIED', $gp->getStatus(), "should not be able to delete arcs without authorizing" );
+
+		$gp->authorize('password', "$gpTestMaster:$gpTestMasterPassword");
+		$gp->try_replace_successors( 1, array( 17 ) );
+		$this->assertEquals( 'OK', $gp->getStatus(), "should be able to delete arcs with updater privileges" );
 	}
 
 	public function testClearPrivilege() {
@@ -316,11 +352,11 @@ class gpServerTest extends gpClientTestBase
 		$this->assertFalse( $ok, "should not be able to clear a graph without authorizing" );
 
 		$gp->authorize('password', "$gpTestMaster:$gpTestMasterPassword");
-		$ok = $gp->clear();
+		$ok = $gp->try_clear();
 		$this->assertEquals( $ok, 'OK', "should be able to clear graph with updater privileges" );
 
 		$gp->authorize('password', "$gpTestAdmin:$gpTestAdminPassword"); // re-authenticate
-		$ok = $gp->clear();
+		$ok = $gp->try_clear();
 		$this->assertEquals( $ok, 'OK', "should be able to clear graph with admin privileges" );
 	}
 
