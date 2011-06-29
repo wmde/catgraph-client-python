@@ -335,12 +335,30 @@ class gpServerTest extends gpClientTestBase
 		$gp->use_graph($gpTestGraphName);
 		
 		$ok = $gp->try_replace_successors( 1, array( 17 ) );
-		$this->assertFalse( $ok, "should not be able to replace successors without authorizing" );
+		$this->assertFalse( $ok, "should not be able to replace arcs without authorizing" );
 		$this->assertEquals( 'DENIED', $gp->getStatus(), "command should be denied, not fail" );
 
 		$gp->authorize('password', "$gpTestMaster:$gpTestMasterPassword");
 		$ok = $gp->try_replace_successors( 1, array( 17 ) );
-		$this->assertEquals( 'OK', $ok, "should be able to delete arcs with updater privileges" );
+		$this->assertEquals( 'OK', $ok, "should be able to replace arcs with updater privileges" );
+	}
+
+	public function testReplacePredecessorsPrivilege() {
+		global $gpTestGraphName;
+		global $gpTestMaster, $gpTestMasterPassword;
+
+		$this->gp->add_arcs( array( array( 1, 11 ),	array( 1, 12 ) ) ); //add some arcs as admin
+
+		$gp = $this->newConnection();
+		$gp->use_graph($gpTestGraphName);
+		
+		$ok = $gp->try_replace_predecessors( 1, array( 17 ) );
+		$this->assertFalse( $ok, "should not be able to replace arcs without authorizing" );
+		$this->assertEquals( 'DENIED', $gp->getStatus(), "command should be denied, not fail" );
+
+		$gp->authorize('password', "$gpTestMaster:$gpTestMasterPassword");
+		$ok = $gp->try_replace_predecessors( 1, array( 17 ) );
+		$this->assertEquals( 'OK', $ok, "should be able to replace arcs with updater privileges" );
 	}
 
 	public function testClearPrivilege() {
