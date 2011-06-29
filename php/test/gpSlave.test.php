@@ -205,9 +205,8 @@ class gpSlaveTest extends gpSlaveTestBase
 		$this->assertArgumentRejected( false );
 		$this->assertArgumentRejected( ' x ' );
 		
-		#FIXME: testing "a:b" as an argument causes a lockup. i don't see why. it works on the command line. and authe works too. WTF.
-		#$this->gp->debug = true;
-		#$this->assertArgumentAccepted( 'x:y' ); // needed for password auth!
+		//$this->gp->setTimeout(2); // has no effect for pipes
+		$this->assertArgumentAccepted( 'x:y' ); // needed for password auth! //NOTE: This is broken in graphcore (but works via graphserv)!
 		
 		$this->assertArgumentAccepted( '123' );
 		$this->assertArgumentAccepted( 'x' );
@@ -312,4 +311,3 @@ class gpSlaveTest extends gpSlaveTestBase
     // currently none. could check if the process really dies after quit, etc
     //TODO: test checkPeer, etc
 }
-

@@ -146,7 +146,7 @@ class gpServerTest extends gpClientTestBase
 		$this->assertSessionValue('ConnectedGraph', $gpTestGraphName);
 		
 		$this->gp->shutdown(); // <------------------
-		$this->assertSessionValue('ConnectedGraph', 'None');
+		//$this->assertSessionValue('ConnectedGraph', 'None'); //nice, but not reliable. race condition.
 		
 		$this->gp->try_stats();
 		$this->assertEquals( 'FAILED', $this->gp->getStatus(), 'fetching stats should fail after shutdown' );
@@ -304,10 +304,10 @@ class gpServerTest extends gpClientTestBase
 
 		$gp->authorize('password', "$gpTestMaster:$gpTestMasterPassword");
 		$ok = $gp->try_add_arcs( array( array( 1, 11 ), array( 1, 12 ) ) );
-		$this->assertTrue( $ok, "should be able to add arcs with updater privileges" );
+		$this->assertEquals( 'OK', $ok, "should be able to add arcs with updater privileges" );
 	}
 
-	public function testDeleteArcsPrivilege() {
+	public function testRemoveArcsPrivilege() {
 		global $gpTestGraphName;
 		global $gpTestMaster, $gpTestMasterPassword;
 
@@ -316,13 +316,13 @@ class gpServerTest extends gpClientTestBase
 		$gp = $this->newConnection();
 		$gp->use_graph($gpTestGraphName);
 		
-		$ok = $gp->try_delete_arcs( array( array( 1, 11 ) ) );
+		$ok = $gp->try_remove_arcs( array( array( 1, 11 ) ) );
 		$this->assertFalse( $ok, "should not be able to delete arcs without authorizing" );
 		$this->assertEquals( 'DENIED', $gp->getStatus(), "command should be denied, not fail" );
 
 		$gp->authorize('password', "$gpTestMaster:$gpTestMasterPassword");
-		$ok = $gp->try_delete_arcs( array( array( 1, 11 ) ) );
-		$this->assertTrue( $ok, "should be able to delete arcs with updater privileges" );
+		$ok = $gp->try_remove_arcs( array( array( 1, 11 ) ) );
+		$this->assertEquals( 'OK', $ok, "should be able to delete arcs with updater privileges" );
 	}
 
 	public function testReplaceSuccessorsPrivilege() {
@@ -340,7 +340,7 @@ class gpServerTest extends gpClientTestBase
 
 		$gp->authorize('password', "$gpTestMaster:$gpTestMasterPassword");
 		$ok = $gp->try_replace_successors( 1, array( 17 ) );
-		$this->assertTrue( $ok, "should be able to delete arcs with updater privileges" );
+		$this->assertEquals( 'OK', $ok, "should be able to delete arcs with updater privileges" );
 	}
 
 	public function testClearPrivilege() {
