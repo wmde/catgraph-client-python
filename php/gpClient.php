@@ -166,7 +166,7 @@ class gpPipeSink extends gpDataSink {
 	public function putRow( $row ) {
 		$s = gpConnection::joinRow( $row );
 		
-		fputs($this->hout, $s . GP_LINEBREAK); 
+		gpClient::send( $this->hout, $s . GP_LINEBREAK ); 
 	}
 }
 
@@ -317,6 +317,30 @@ abstract class gpConnection {
 			return $status;
 		}
     }
+    
+    public static function send( $handle, $s ) {
+		$len = strlen($s);
+		
+		for ($written = 0; $written < $len; $written += $c) {
+			$c = fwrite($handle, substr($s, $written), $len - $written);
+			
+			if ($c === false) { // doc sais fwrite returns false on errors
+				throw new gpProtocolException("failed to send data to peer, broken pipe! (fwrite returned false)");
+			}
+
+			if ($c === 0) { // experience sais fwrite returns 0 on errors
+				throw new gpProtocolException("failed to send data to peer, broken pipe! (fwrite returned 0)");
+			}
+		}
+		
+		fflush( $handle );
+		
+		return $written;
+	}
+	
+	public function setTimeout( $seconds ) {
+		stream_set_timeout($this->hin, $seconds);
+	}
 
 	public function exec( $command, gpDataSource $source = null, gpDataSink $sink = null, &$has_output = null ) {
 		$this->trace(__METHOD__, "BEGIN");
@@ -388,8 +412,7 @@ abstract class gpConnection {
 		}
 		
 		$this->trace(__METHOD__, ">>> ", $command);
-		fputs( $this->hout, $command . GP_LINEBREAK ); 
-		fflush( $this->hout );
+		gpClient::send( $this->hout, $command . GP_LINEBREAK ); 
 		
 		$this->trace(__METHOD__, "source", $source == null ? null : get_class($source));
 		
@@ -397,7 +420,6 @@ abstract class gpConnection {
 			$this->copyFromSource( $source );
 		}
 		
-		//FIXME: for thecommand "a:b", we get stuck here. why??
 		$re = fgets( $this->hin, 1024 ); //FIXME: what if response is too long?
 		$this->trace(__METHOD__, "<<< ", $re);
 		
@@ -513,8 +535,7 @@ abstract class gpConnection {
 
 		// $source->close(); // to close or not to close...
 
-		fputs($this->hout, GP_LINEBREAK); // blank line
-		fflush( $this->hout );
+		gpClient::send( $this->hout, GP_LINEBREAK ); 
 
 		$this->trace(__METHOD__, "copy complete.");
 
