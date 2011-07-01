@@ -189,7 +189,7 @@ class gpServerTest extends gpClientTestBase
 		$this->assertEquals( 'OK', $gp3->getStatus(), 'graph should still be available to others after quit.' );
 		$gp3->close();
 	}
-
+	
 	//// privileges //////////////////////////////////////////////////////////
 	public function testCreateGraphPrivilege() {
 		global $gpTestGraphName;
