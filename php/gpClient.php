@@ -33,6 +33,12 @@ class gpUsageException extends gpException {
 	}
 }
 
+class gpClientException extends gpException {
+	function __construct( $msg ) {
+		gpException::__construct( $msg );
+	}
+}
+
 /////////////////////////////////////////////////////////////////////////
 abstract class gpDataSource {
 	public abstract function nextRow();
@@ -165,7 +171,8 @@ class gpPipeSink extends gpDataSink {
 
 	public function putRow( $row ) {
 		$s = gpConnection::joinRow( $row );
-		
+
+		#print "--- $s\n";
 		gpClient::send( $this->hout, $s . GP_LINEBREAK ); 
 	}
 }
