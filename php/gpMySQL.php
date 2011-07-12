@@ -1,25 +1,20 @@
 <?php
 
 class gpMySQLSource extends gpDataSource {
-	var $connection;
+	var $mysql;
 	var $result;
 	var $field1;
 	var $field2;
 	
-	public function __construct( $connection, $result, $field1, $field2 = null) {
-		$this->connetion = $connection;
+	public function __construct( gpMySQL $mysql, $result, $field1, $field2 = null) {
+		$this->mysql = $mysql;
 		$this->result = $result;
 		$this->field1 = $field1;
 		$this->field2 = $field2;
 	}
 
 	public function nextRow() {
-		$raw = mysql_fetch_assoc( $this->result );
-		$errno = $res ? false : mysql_errno( $this->connection );
-		
-		if ( $errno ) {
-			throw new gpClientException( "MySQL Error $errno: " . mysql_error() );
-		}
+		$raw = $this->mysql->fetch_assoc( $this->result );
 		
 		if ( !$raw ) return null;
 		 
@@ -34,17 +29,17 @@ class gpMySQLSource extends gpDataSource {
 	}
 	
 	public function close( ) {
-		mysql_free_result( $this->result ); 
+		$this->mysql->free_result( $this->result ); 
 	}
 }
 
 abstract class gpMySQLInserter {
-	var $connection;
+	var $mysql;
 	var $table;
 	var $fields;
 
-	function __construct ( $connection, $table, $field1 = null, $field2 = null ) {
-		$this->conenction = $connection;
+	function __construct ( gpMySQL $mysql, $table, $field1 = null, $field2 = null ) {
+		$this->mysql = $mysql;
 		$this->table = $table;
 		
 		$this->fields = array();
@@ -61,20 +56,9 @@ abstract class gpMySQLInserter {
 	public function close() {
 		$this->flush();
 	}
-	
-	protected function query( $sql ) {
-		$res = mysql_query( $sql, $this->connection );
-		$errno = $res ? false : mysql_errno( $this->connection );
-		
-		if ( $errno ) {
-			throw new gpClientException( "MySQL Error $errno: " . mysql_error() );
-		}
-		
-		return $res;
-	}
 }
 
-class gpMySQLSimpleInserter {
+class gpMySQLSimpleInserter extends gpMySQLInserter {
 
 	protected function as_list( $values ) {
 		$sql = "(";
@@ -87,7 +71,7 @@ class gpMySQLSimpleInserter {
 			if ( is_null($v) ) $sql.= "NULL";
 			else if ( is_int($v) ) $sql.= $v;
 			else if ( is_float($v) ) $sql.= $v;
-			else if ( is_str($v) ) $sql.= '"' . mysql_real_escape_string($v) . '"'; //TODO: charset...
+			else if ( is_str($v) ) $sql.= '"' . $this->mysql->real_escape_string($v) . '"'; //TODO: charset...
 			else throw new gpUsageException("bad value type: " . gettype($v));
 		}
 		
@@ -100,7 +84,7 @@ class gpMySQLSimpleInserter {
 		$sql = "INSERT IGNORE INTO {$this->table} ";
 		
 		if ( $this->fields ) {
-			$sql .= " ( ". implode(",", $this->fields) ." ) "
+			$sql .= " ( ". implode(",", $this->fields) ." ) ";
 		}
 		
 		return $sql;
@@ -111,14 +95,14 @@ class gpMySQLSimpleInserter {
 		$sql .= " VALUES ";
 		$sql .= $this->as_list($values);
 		
-		$this->query( $sql );
+		$this->mysql->query( $sql );
 	}
 
 }
 
 class gpMySQLSink extends gpDataSink {
 	
-	public function __construct( $inserter ) {
+	public function __construct( gpMySQLInserter $inserter ) {
 		$this->inserter = $inserter;
 	}
 	
@@ -135,29 +119,25 @@ class gpMySQLSink extends gpDataSink {
 	}
 }
 
-class gpMySQLTempSink extends gpDataSink {
-	var $connection;
+class gpMySQLTempSink extends gpMySQLSink {
+	var $mysql;
 	var $table;
 	
-	public function __construct( $inserter, $connection, $table ) {
+	public function __construct( gpMySQLInserter $inserter, gpMySQL $mysql, $table ) {
 		parent::__construct( $inserter );
 		
-		$this->connection = connection;
-		$this->table = table;
+		$this->mysql = $mysql;
+		$this->table = $table;
 	}
 	
 	public function drop( ) {
 		$sql = "DROP TEMPORARY TABLE IF EXISTS " . $this->table; 
 		
-		$ok = mysql_query( sql );
-		$errno = $ok ? false : mysql_errno( $this->connection );
-		
-		if ( $errno ) {
-			throw new gpClientException( "MySQL Error $errno: " . mysql_error() );
-		}
+		$ok = $this->mysql->query( $sql );
+		return $ok;
 	}
 	
-	public function get_table() {
+	public function getTable() {
 		return $this->table;
 	}
 	
@@ -167,13 +147,53 @@ class gpMySQLTempSink extends gpDataSink {
 class gpMySQL {
 	var $connection;
 	
-	function __construct( $connection ) {
-		$this->conenction = $connection;
+	static function connect( $server = null, $username = null, $password = null, $new_link = false, $client_flags = 0 ) {
+		$connection = mysql_connect($server, $username, $password, $new_link, $client_flags);
+		$errno = mysql_errno( );
+			
+		if ( $errno ) {
+			throw new gpClientException( "MySQL Error $errno: " . mysql_error() );
+		}
+		
+		return new gpMySQL( $connection );
 	}
 	
-	function call__( $name, $args ) {
-		$args[] = $this->connection;
-		call_user_func_array( 'mysql_' . $name, $args );
+	function __construct( $connection ) {
+		if ( !$connection ) throw new Exception("connection must not be null!");
+		$this->connection = $connection;
+	}
+	
+	function __call( $name, $args ) {
+		$rc = false;
+		
+		//see if there's a resource in $args
+		foreach ( $args as $a ) {
+			if ( is_resource( $a ) ) {
+				$rc = true;
+				break;
+			}
+		}
+		
+		//if there was no reset in $args, add the connection
+		if ( !$rc ) {
+			$args[] = $this->connection;
+		}
+		
+		$res = call_user_func_array( 'mysql_' . $name, $args );
+
+		if ( !$res ) {
+			$errno = mysql_errno( $this->connection );
+			
+			if ( $errno ) {
+				throw new gpClientException( "MySQL Error $errno: " . mysql_error() );
+			}
+		}
+
+		return $res;
+	}
+	
+	function quote_string( $s ) {
+		return "'" . mysql_real_escape_string( $s ) . "'";
 	}
 	
 	private function next_id() {
@@ -183,8 +203,8 @@ class gpMySQL {
 		return $id;
 	} 
 	
-	public function make_temp_table( $field1, $fields2 = null ) {
-		$table = "gp_temp_" . $this.>next_id();
+	public function make_temp_table( $field1, $field2 = null ) {
+		$table = "gp_temp_" . $this->next_id();
 		$sql = "CREATE TEMPORARY TABLE " . $table; 
 		$sql .= "(";
 		$sql .= $field1 . " INT NOT NULL";
@@ -196,29 +216,15 @@ class gpMySQL {
 		return $table;
 	}
 
-	public function query( $sql ) {
-		$res = mysql_query( $sql, $this->connection );
-		$errno = $res ? false : mysql_errno( $this->connection );
-		
-		if ( $errno ) {
-			throw new gpClientException( "MySQL Error $errno: " . mysql_error() );
-		}
-		
-		return $res;
-	}
-
 	protected function new_inserter( $table, $field1, $field2 = null ) {
-		return new gpMySQLSimpleInserter( $this->connection, $table, $field1, $field2 );
+		return new gpMySQLSimpleInserter( $this, $table, $field1, $field2 );
 	}
 	
-	public function make_temp_sink( $cols ) {
-		$field1 = "n";
-		if ($cols>1) $field2 = "m";
-		
+	public function make_temp_sink( $field1, $field2 = null ) {
 		$table = $this->make_temp_table($field1, $field2);
 		
 		$ins = $this->new_inserter($table, $field1, $field2);
-		$sink = new gpMySQLTempSink( $inserter, $this->conenction, $table );
+		$sink = new gpMySQLTempSink( $ins, $this, $table );
 		
 		return $sink;
 	}
@@ -230,16 +236,23 @@ class gpMySQL {
 		return $sink;
 	}
 
-	public function make_source( $table, $field1, $field2 = null ) {
-		if ( $field2 ) $f = "($field1, $field2)";
-		else $f = "($field1)";
+	public function make_source( $table, $field1, $field2 = null, $big = false ) {
+		if ( $field2 ) $f = "$field1, $field2";
+		else $f = "$field1";
 		
 		$sql = "SELECT $f FROM $table ";
+		
+		if ( $field2 ) $sql .= " ORDER BY $field1, $field2";
+		else $sql .= " ORDER BY $field1";
+		
+		return $this->make_query_source( $sql, $field1, $field2, $big);
 	}
 	
-	public function make_query_source( $query, $field1, $field2 = null ) {
-		$res = $this->query($query);
-		$src = new gpMySQLSource( $this->connection, $res, $field1, $field2 );
+	public function make_query_source( $query, $field1, $field2 = null, $big = false ) {
+		if ($big) $res = $this->unbuffered_query($query);
+		else $res = $this->query($query);
+		
+		$src = new gpMySQLSource( $this, $res, $field1, $field2 );
 		
 		return $src;
 	}
@@ -248,7 +261,7 @@ class gpMySQL {
 		$r = $remote ? "" : "LOCAL"; //TESTME
 		
 		$query .= " INTO $r DATA OUTFILE "; //TESTME
-		$query .= '"' . mysql_real_escape_string($file) . '"';
+		$query .= $this->quote_string($file);
 		
 		return $this->query($query);
 	}
@@ -258,7 +271,7 @@ class gpMySQL {
 
 		$query = "";
 		$query .= " LOAD $r DATA INFILE "; //TESTME
-		$query .= '"' . mysql_real_escape_string($file) . '"';
+		$query .= $this->quote_string($file);
 		$query .= " INTO TABLE $table";
 		
 		return $this->query($query);

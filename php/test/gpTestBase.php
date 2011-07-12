@@ -5,7 +5,62 @@ require_once('../gpClient.php');
 #require_once('PHPUnit/Framework.php');
 require_once('gpTestConfig.php');
 
-abstract class gpConnectionTestBase extends PHPUnit_Framework_TestCase
+abstract class gpTestBase extends PHPUnit_Framework_TestCase
+{
+    public static function setContains( $a, $w ) {
+		$found = false;
+		foreach ( $a as $v ) {
+			if ( is_array( $v ) ) {
+				if ( is_array( $w ) ) {
+					if ( gpConnectionTestBase::arrayEquals( $v, $w ) ) {
+						$found = true;
+						break;
+					}
+				}
+			} else {
+				if ( $v == $w ) {
+					$found = true;
+					break;
+				}
+			}
+		}
+		
+		return $found;
+	}
+	
+    public static function setEquals( $a, $b ) {
+		if ( count($a) != count($b) ) return false;
+		
+		foreach ( $a as $v ) {
+			if ( !gpConnectionTestBase::setContains($b, $v) ) {
+				return false;
+			}
+		}
+		
+		return true;
+	}
+    
+    public static function arrayEquals( $a, $b ) {
+		if ( count($a) != count($b) ) return false;
+		
+		foreach ( $a as $k => $v ) {
+			$w = $b[$k];
+			
+			if ( is_array( $v ) ) {
+				//WARNING: no protection against circular array references
+				if ( !is_array($w) || !gpConnectionTestBase::arrayEquals( $w, $v ) ) {
+					return false;
+				}
+			} else if ( $w != $v ) {
+				return false;
+			}
+		}
+		
+		return true;
+	}    
+}
+
+abstract class gpConnectionTestBase extends gpTestBase
 {
 	public function setUp() {
 		throw new Exception('subclasses must override setUp() to store a gpConnection in $this->gp');
@@ -78,57 +133,6 @@ abstract class gpConnectionTestBase extends PHPUnit_Framework_TestCase
 		$this->assertEquals( $value, $status, $mssage );
     }
     
-    public static function setContains( $a, $w ) {
-		$found = false;
-		foreach ( $a as $v ) {
-			if ( is_array( $v ) ) {
-				if ( is_array( $w ) ) {
-					if ( gpConnectionTestBase::arrayEquals( $v, $w ) ) {
-						$found = true;
-						break;
-					}
-				}
-			} else {
-				if ( $v == $w ) {
-					$found = true;
-					break;
-				}
-			}
-		}
-		
-		return $found;
-	}
-	
-    public static function setEquals( $a, $b ) {
-		if ( count($a) != count($b) ) return false;
-		
-		foreach ( $a as $v ) {
-			if ( !gpConnectionTestBase::setContains($b, $v) ) {
-				return false;
-			}
-		}
-		
-		return true;
-	}
-    
-    public static function arrayEquals( $a, $b ) {
-		if ( count($a) != count($b) ) return false;
-		
-		foreach ( $a as $k => $v ) {
-			$w = $b[$k];
-			
-			if ( is_array( $v ) ) {
-				//WARNING: no protection against circular array references
-				if ( !is_array($w) || !gpConnectionTestBase::arrayEquals( $w, $v ) ) {
-					return false;
-				}
-			} else if ( $w != $v ) {
-				return false;
-			}
-		}
-		
-		return true;
-	}    
 }
 
 abstract class gpSlaveTestBase extends gpConnectionTestBase

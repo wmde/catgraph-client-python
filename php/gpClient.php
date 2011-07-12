@@ -160,6 +160,10 @@ class gpArraySink extends gpDataSink {
 	public function makeSource() {
 		return new gpArraySource( $this->data );
 	}	
+	
+	public function getMap() {
+		return pairs2map($this->data);
+	}
 }
 
 class gpPipeSink extends gpDataSink {
