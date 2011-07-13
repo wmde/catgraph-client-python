@@ -52,6 +52,11 @@ class gpSlaveTest extends gpSlaveTestBase
 		$this->assertArrayHasKey( 'ArcCount', $a, "contents: " . var_export($a, true) );
 		$this->assertEquals( $a['ArcCount'], 4 );
 		
+		// two column data as map
+		$a = $this->gp->capture_stats_map();
+		$this->assertArrayHasKey( 'ArcCount', $a, "contents: " . var_export($a, true) );
+		$this->assertEquals( $a['ArcCount'], 4 );
+		
 		//capture none
 		$a = $this->gp->capture_traverse_successors( 77, 5 );
 		$this->assertStatus( 'NONE' );
@@ -73,6 +78,26 @@ class gpSlaveTest extends gpSlaveTestBase
 		//capture with try
 		$x = $this->gp->try_capture_foo();
 		//should not trigger an exception...
+	}
+	
+	public function dummyCallHandler($gp, &$cmd, &$args, &$source, &$sink, &$capture, &$result) {
+		if ( $cmd == 'dummy' ) {
+			$result = "test";
+			return false;
+		}
+		
+		return true;
+	}
+	
+	public function testCallHandler() {
+		$h = array( $this, 'dummyCallHandler' );
+		$this->gp->addCallHandler($h);
+		
+		$st = $this->gp->capture_stats();
+		$this->assertTrue(is_array($st), 'capture_stats is ecpedted to return an array!');
+		
+		$x = $this->gp->dummy();
+		$this->assertEquals('test', $x);
 	}
 
 	private function assertCommandAccepted( $cmd, $src = null, $sink = null ) {

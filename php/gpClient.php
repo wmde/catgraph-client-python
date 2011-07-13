@@ -213,6 +213,7 @@ abstract class gpConnection {
 	protected $status = null;
 	protected $statusMessage = null;
 	protected $response = null;
+	protected $call_handlers = array();
 	
 	public $allowPipes = false;
 	public $strictArguments = true;
@@ -221,6 +222,10 @@ abstract class gpConnection {
 	
 	public abstract function connect();
 	public abstract function close(); //FIXME: set $closed! //FIXME: close on quit/shutdown
+	
+	public function addCallHandler( $handler ) { //$handler($this, &$cmd, &$args, &$source, &$sink, &$capture, &$result)
+		$this->call_handlers[] = $handler;
+	}
 	
 	public function getStatus() {
 		return $this->status;
@@ -292,6 +297,19 @@ abstract class gpConnection {
 			$capture = false;
 		}
 		
+		if ( preg_match( '/-map$/', $cmd ) ) {
+			$cmd = substr( $cmd, 0, strlen($cmd) -4 );
+			$map = true;
+		} else { 		
+			$map = false;
+		}
+		
+		foreach ( $this->call_handlers as $handler ) {
+			$result = null;
+			$continue = call_user_func_array( $handler, array( $this, &$cmd, &$args, &$source, &$sink, &$capture, &$result ) );
+			if ( $continue === false ) return $result;
+		}
+		
 		$command = array( $cmd );
 		
 		foreach ( $arguments as $arg ) {
@@ -319,8 +337,12 @@ abstract class gpConnection {
 		
 		if ( $capture ) {
 			if ( $status == 'OK' ) {
-				if ( $has_output ) return $sink->data;
-				else return true;
+				if ( $has_output ) {
+					if ($map) return $sink->getMap();
+					else return $sink->getData();
+				} else {
+					return true;
+				}
 			}
 			else if ( $status == 'NONE' ) return null;
 			else return false;
