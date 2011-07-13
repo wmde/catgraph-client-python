@@ -143,7 +143,7 @@ abstract class gpSlaveTestBase extends gpConnectionTestBase
 		$this->dump = new gpPipeSink( STDOUT ); 
 
 		try {
-			$this->gp = new gpSlave( $gpTestGraphCorePath );
+			$this->gp = gpConnection::new_slave_connection( $gpTestGraphCorePath );
 			$this->gp->connect();
 		} catch ( gpException $ex ) {
 			print("Unable to launch graphcore instance from $gpTestGraphCorePath, please make sure graphcore is installed and check the \$gpTestGraphCorePath configuration options in gpTestConfig.php.\nOriginal error: " . $ex->getMessage() . "\n");
@@ -188,7 +188,7 @@ abstract class gpClientTestBase extends gpConnectionTestBase
 	public function newConnection() {
 		global $gpTestGraphServHost, $gpTestGraphServPort;
 
-		$gp = new gpClient( null, $gpTestGraphServHost, $gpTestGraphServPort );
+		$gp = gpConnection::new_client_connection( null, $gpTestGraphServHost, $gpTestGraphServPort );
 		$gp->connect();
 
 		return $gp;

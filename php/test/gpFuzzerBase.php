@@ -21,7 +21,7 @@ abstract class gpFuzzerBase
 	public function newConnection() {
 		global $gpTestGraphServHost, $gpTestGraphServPort;
 
-		$gp = new gpClient( null, $gpTestGraphServHost, $gpTestGraphServPort );
+		$gp = gpConnection::new_client_connection( null, $gpTestGraphServHost, $gpTestGraphServPort );
 		$gp->connect();
 
 		return $gp;

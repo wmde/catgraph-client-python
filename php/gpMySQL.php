@@ -163,6 +163,25 @@ class gpMySQL {
 		$this->connection = $connection;
 	}
 	
+	function gp_call_handler($gp, &$cmd, &$args, &$source, &$sink, &$capture, &$result) {
+		if ( preg_match( '/-into$/', $cmd, $m ) ) {
+			$cmd = preg_replace('/-into?$/', '', $cmd);
+			
+			$c = count($args);
+			$t = $args[$c-1];
+			
+			$tt = preg_split('/[\s,;]+/', $t); //XXX: this is butt ugly!
+			$sink = $this->make_sink( $tt[0], @$tt[1], @$tt[2] );
+		} 
+		
+		return true;
+	}
+	
+	function enhance_client( gpConnection $client ) {
+		$h = array( $this, 'gp_call_handler' );
+		$client->addCallHandler( $h );
+	}
+	
 	function __call( $name, $args ) {
 		$rc = false;
 		
@@ -229,7 +248,7 @@ class gpMySQL {
 		return $sink;
 	}
 
-	public function make_sink( $table, $cols ) {
+	public function make_sink( $table, $field1, $field2 = null ) {
 		$ins = $this->new_inserter($table, $field1, $field2);
 		$sink = new gpMySQLSink( $inserter );
 		
