@@ -544,8 +544,8 @@ class gpConnection {
 			$map = false;
 		}
 		
+		$result = null;
 		foreach ( $this->call_handlers as $handler ) {
-			$result = null;
 			$continue = call_user_func_array( $handler, array( $this, &$cmd, &$args, &$source, &$sink, &$capture, &$result ) );
 			if ( $continue === false ) return $result;
 		}
@@ -574,7 +574,8 @@ class gpConnection {
 			if ( !$try ) throw $e;
 			else return false;
 		}
-		
+
+		//note: call modifiers like capture change the return type!
 		if ( $capture ) {
 			if ( $status == 'OK' ) {
 				if ( $has_output ) {
@@ -587,7 +588,8 @@ class gpConnection {
 			else if ( $status == 'NONE' ) return null;
 			else return false;
 		} else {
-			return $status;
+			if ( $result ) return $result; // from handler
+			else return $status;
 		}
     }
     

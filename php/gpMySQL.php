@@ -1,20 +1,20 @@
 <?php
 
 class gpMySQLSource extends gpDataSource {
-	var $mysql;
+	var $glue;
 	var $result;
 	var $field1;
 	var $field2;
 	
-	public function __construct( gpMySQL $mysql, $result, $field1, $field2 = null) {
-		$this->mysql = $mysql;
+	public function __construct( gpMySQLGlue $glue, $result, $field1, $field2 = null) {
+		$this->glue = $glue;
 		$this->result = $result;
 		$this->field1 = $field1;
 		$this->field2 = $field2;
 	}
 
 	public function nextRow() {
-		$raw = $this->mysql->fetch_assoc( $this->result );
+		$raw = $this->glue->mysql_fetch_assoc( $this->result );
 		
 		if ( !$raw ) return null;
 		 
@@ -29,17 +29,17 @@ class gpMySQLSource extends gpDataSource {
 	}
 	
 	public function close( ) {
-		$this->mysql->free_result( $this->result ); 
+		$this->glue->mysql_free_result( $this->result ); 
 	}
 }
 
 abstract class gpMySQLInserter {
-	var $mysql;
+	var $glue;
 	var $table;
 	var $fields;
 
-	function __construct ( gpMySQL $mysql, $table, $field1 = null, $field2 = null ) {
-		$this->mysql = $mysql;
+	function __construct ( gpMySQLGlue $glue, $table, $field1 = null, $field2 = null ) {
+		$this->glue = $glue;
 		$this->table = $table;
 		
 		$this->fields = array();
@@ -71,7 +71,7 @@ class gpMySQLSimpleInserter extends gpMySQLInserter {
 			if ( is_null($v) ) $sql.= "NULL";
 			else if ( is_int($v) ) $sql.= $v;
 			else if ( is_float($v) ) $sql.= $v;
-			else if ( is_str($v) ) $sql.= '"' . $this->mysql->real_escape_string($v) . '"'; //TODO: charset...
+			else if ( is_str($v) ) $sql.= $this->glue->quote_string($v); //TODO: charset...
 			else throw new gpUsageException("bad value type: " . gettype($v));
 		}
 		
@@ -95,7 +95,7 @@ class gpMySQLSimpleInserter extends gpMySQLInserter {
 		$sql .= " VALUES ";
 		$sql .= $this->as_list($values);
 		
-		$this->mysql->query( $sql );
+		$this->glue->mysql_query( $sql );
 	}
 
 }
@@ -120,20 +120,20 @@ class gpMySQLSink extends gpDataSink {
 }
 
 class gpMySQLTempSink extends gpMySQLSink {
-	var $mysql;
+	var $glue;
 	var $table;
 	
-	public function __construct( gpMySQLInserter $inserter, gpMySQL $mysql, $table ) {
+	public function __construct( gpMySQLInserter $inserter, gpMySQLGlue $glue, $table ) {
 		parent::__construct( $inserter );
 		
-		$this->mysql = $mysql;
+		$this->glue = $glue;
 		$this->table = $table;
 	}
 	
 	public function drop( ) {
 		$sql = "DROP TEMPORARY TABLE IF EXISTS " . $this->table; 
 		
-		$ok = $this->mysql->query( $sql );
+		$ok = $this->glue->mysql_query( $sql );
 		return $ok;
 	}
 	
@@ -144,22 +144,32 @@ class gpMySQLTempSink extends gpMySQLSink {
 }
 
 
-class gpMySQL {
+class gpMySQLGlue extends gpConnection {
 	var $connection;
 	
-	static function connect( $server = null, $username = null, $password = null, $new_link = false, $client_flags = 0 ) {
-		$connection = mysql_connect($server, $username, $password, $new_link, $client_flags);
+	function __construct( $transport ) {
+		parent::__construct($transport);
+
+		$h = array( $this, 'gp_call_handler' );
+		$this->addCallHandler( $h );
+	}
+	
+	function mysql_connect( $server = null, $username = null, $password = null, $new_link = false, $client_flags = 0 ) {
+		$this->connection = @mysql_connect($server, $username, $password, $new_link, $client_flags);
 		$errno = mysql_errno( );
 			
 		if ( $errno ) {
-			throw new gpClientException( "MySQL Error $errno: " . mysql_error() );
+			throw new gpClientException( "Failed to connect! MySQL Error $errno: " . mysql_error() );
 		}
 		
-		return new gpMySQL( $connection );
+		if ( !$this->connection ) {
+			throw new gpClientException( "Failed to connect! (unknown error)" );
+		}
+		
+		return true;
 	}
-	
-	function __construct( $connection ) {
-		if ( !$connection ) throw new Exception("connection must not be null!");
+
+	function set_mysql_connection( $connection ) {
 		$this->connection = $connection;
 	}
 	
@@ -169,20 +179,33 @@ class gpMySQL {
 			
 			$c = count($args);
 			$t = $args[$c-1];
+			unset($args[$c-1]);
 			
-			$tt = preg_split('/[\s,;]+/', $t); //XXX: this is butt ugly!
+			$tt = preg_split('/[\s,;]+/', $t); //XXX: FUGLY HACK!
 			$sink = $this->make_sink( $tt[0], @$tt[1], @$tt[2] );
+			
+			$result = $sink; //XXX: quite useless, but consistent with -from
+		} 
+		
+		if ( preg_match( '/-from$/', $cmd, $m ) ) {
+			$cmd = preg_replace('/-from?$/', '', $cmd);
+			
+			$c = count($args);
+			$t = $args[$c-1];
+			unset($args[$c-1]);
+			
+			$tt = preg_split('/[\s,;]+/', $t); //XXX: FUGLY HACK!
+			
+			if ( $tt[0] == "?" ) $source = $this->make_temp_source( @$tt[1], @$tt[2] ); 
+			else $source = $this->make_source( $tt[0], @$tt[1], @$tt[2] );
+			
+			$result = $source; //XXX: a bit confusing, and only useful for temp sinks
 		} 
 		
 		return true;
 	}
 	
-	function enhance_client( gpConnection $client ) {
-		$h = array( $this, 'gp_call_handler' );
-		$client->addCallHandler( $h );
-	}
-	
-	function __call( $name, $args ) {
+	private function call_mysql( $name, $args ) {
 		$rc = false;
 		
 		//see if there's a resource in $args
@@ -193,12 +216,12 @@ class gpMySQL {
 			}
 		}
 		
-		//if there was no reset in $args, add the connection
+		//if there was no resource in $args, add the connection
 		if ( !$rc ) {
 			$args[] = $this->connection;
 		}
 		
-		$res = call_user_func_array( 'mysql_' . $name, $args );
+		$res = call_user_func_array( $name, $args );
 
 		if ( !$res ) {
 			$errno = mysql_errno( $this->connection );
@@ -209,6 +232,14 @@ class gpMySQL {
 		}
 
 		return $res;
+	}
+	
+	function __call( $name, $args ) {
+		if ( preg_match('/^mysql_/', $name) ) {
+			return $this->call_mysql($name, $args);
+		} else {
+			return parent::__call($name, $args);
+		}
 	}
 	
 	function quote_string( $s ) {
@@ -230,7 +261,7 @@ class gpMySQL {
 		if ($field2) $sql .= ", " . $field2 . " INT NOT NULL";
 		$sql .= ")";
 		
-		$this->query($sql);
+		$this->mysql_query($sql);
 		
 		return $table;
 	}
@@ -249,30 +280,28 @@ class gpMySQL {
 	}
 
 	public function make_sink( $table, $field1, $field2 = null ) {
-		$ins = $this->new_inserter($table, $field1, $field2);
+		$inserter = $this->new_inserter($table, $field1, $field2);
 		$sink = new gpMySQLSink( $inserter );
 		
 		return $sink;
 	}
 
-	public function make_source( $table, $field1, $field2 = null, $big = false ) {
+	public function make_source( $query, $field1, $field2 = null, $big = false ) {
 		if ( $field2 ) $f = "$field1, $field2";
 		else $f = "$field1";
 		
-		$sql = "SELECT $f FROM $table ";
+		if ( preg_match('/^\s*select\s+/i', $query) ) $sql = $query;
+		else $sql = "SELECT $f FROM $query ";
 		
-		if ( $field2 ) $sql .= " ORDER BY $field1, $field2";
-		else $sql .= " ORDER BY $field1";
+		if ( !preg_match('/\s+ORDER\s+BY\s+/i', $sql) ) {
+			if ( $field2 ) $sql .= " ORDER BY $field1, $field2";
+			else $sql .= " ORDER BY $field1";
+		}
 		
-		return $this->make_query_source( $sql, $field1, $field2, $big);
-	}
-	
-	public function make_query_source( $query, $field1, $field2 = null, $big = false ) {
-		if ($big) $res = $this->unbuffered_query($query);
-		else $res = $this->query($query);
+		if ($big) $res = $this->mysql_unbuffered_query($sql);
+		else $res = $this->mysql_query($sql);
 		
 		$src = new gpMySQLSource( $this, $res, $field1, $field2 );
-		
 		return $src;
 	}
 
@@ -282,7 +311,7 @@ class gpMySQL {
 		$query .= " INTO $r DATA OUTFILE "; //TESTME
 		$query .= $this->quote_string($file);
 		
-		return $this->query($query);
+		return $this->mysql_query($query);
 	}
 
 	public function insert_from_file( $table, $file, $remote = false ) {
@@ -293,7 +322,20 @@ class gpMySQL {
 		$query .= $this->quote_string($file);
 		$query .= " INTO TABLE $table";
 		
-		return $this->query($query);
+		return $this->mysql_query($query);
+	}
+	
+	public function close() {
+		$this->mysql_close();
+		parent::close();
 	}
 
+	 
+	public static function new_client_connection( $graphname, $host = false, $port = false ) {
+		return new gpMySQLGlue( new gpClientTransport($graphname, $host, $port) );
+	}
+
+	public static function new_slave_connection( $command, $cwd = null, $env = null ) {
+		return new gpMySQLGlue( new gpSlaveTransport($command, $cwd, $env) );
+	}
 }
