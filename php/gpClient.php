@@ -546,7 +546,7 @@ class gpConnection {
 		
 		$result = null;
 		foreach ( $this->call_handlers as $handler ) {
-			$continue = call_user_func_array( $handler, array( $this, &$cmd, &$args, &$source, &$sink, &$capture, &$result ) );
+			$continue = call_user_func_array( $handler, array( $this, &$cmd, &$arguments, &$source, &$sink, &$capture, &$result ) );
 			if ( $continue === false ) return $result;
 		}
 		

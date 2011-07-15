@@ -117,14 +117,14 @@ abstract class gpConnectionTestBase extends gpTestBase
 		$stats = $this->gp->capture_stats();
 		$stats = pairs2map( $stats );
 		
-		$this->assertEquals( $stats[$field], $value, "status[$field]" );
+		$this->assertEquals( $value, $stats[$field], "status[$field]" );
     }
     
     public function assertSessionValue($field, $value ) {
 		$stats = $this->gp->capture_session_info();
 		$stats = pairs2map( $stats );
 		
-		$this->assertEquals( $stats[$field], $value, "session_info[$field]" );
+		$this->assertEquals( $value, $stats[$field], "session_info[$field]" );
     }
     
     public function assertStatus($value, $mssage = null) {

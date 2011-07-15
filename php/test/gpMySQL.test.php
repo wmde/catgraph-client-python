@@ -51,36 +51,36 @@ class gpMySQLTest extends gpSlaveTestBase {
         $this->gp->mysql_query( "INSERT INTO test VALUES (11, 11)" );
         
 		//-----------------------------------------------------------
-        $src = $this->gp->make_source( "test", "a", "b" );
+        $src = $this->gp->make_source( new gpMySQLTable("test", "a", "b") );
         
-        $this->assertTrue( gpTestBase::arrayEquals( array(3, 8), $src->nextRow() ), "expected row to be 3,8 " );
-        $this->assertTrue( gpTestBase::arrayEquals( array(7, 9), $src->nextRow() ), "expected row to be 7,9" );
-        $this->assertTrue( gpTestBase::arrayEquals( array(11, 11), $src->nextRow() ), "expected row to be 11,11" );
+        $this->assertEquals(array(3, 8), $src->nextRow() , "expected row to be 3,8 " );
+        $this->assertEquals(array(7, 9), $src->nextRow() , "expected row to be 7,9" );
+        $this->assertEquals(array(11, 11), $src->nextRow() , "expected row to be 11,11" );
         $this->assertNull( $src->nextRow(), "expected next row to be null" );
         
         $src->close();
 
 		//-----------------------------------------------------------
-        $src = $this->gp->make_source( "select a from test where a > 7", "a" );
+        $src = $this->gp->make_source( new gpMySQLSelect("select a from test where a > 7") );
         
-        $this->assertTrue( gpTestBase::arrayEquals( array(11), $src->nextRow() ), "expected row to be 11" );
+        $this->assertEquals(array(11), $src->nextRow() , "expected row to be 11" );
         $this->assertNull( $src->nextRow(), "expected next row to be null" );
         
         $src->close();
     }
 
     public function testTempSink() {
-		$snk = $this->gp->make_temp_sink( "a", "b" );
+		$snk = $this->gp->make_temp_sink( new gpMySQLTable("?", "a", "b") );
 		$table = $snk->getTable();
 		
 		$snk->putRow( array(4,5) );
 		$snk->putRow( array(6,7) );
 		$snk->close();
 		
-		$res = $this->gp->mysql_query( "SELECT a, b FROM $table ORDER BY a, b");
+		$res = $this->gp->mysql_query( "SELECT a, b FROM ".$table->get_name()." ORDER BY a, b");
 		
-		$this->assertTrue( gpTestBase::arrayEquals( array('a' => 4, 'b' => 5), $r = $this->gp->mysql_fetch_assoc($res) ), "expected row to be 4,5, got " . var_export($r, true) );
-		$this->assertTrue( gpTestBase::arrayEquals( array('a' => 6, 'b' => 7), $r = $this->gp->mysql_fetch_assoc($res) ), "expected row to be 6,7, got " . var_export($r, true) );
+		$this->assertEquals(array('a' => 4, 'b' => 5), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 4,5, got " . var_export($r, true) );
+		$this->assertEquals(array('a' => 6, 'b' => 7), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 6,7, got " . var_export($r, true) );
 		$this->assertFalse(  $this->gp->mysql_fetch_assoc($res), "expected next row to be false" );
 		
 		$this->gp->mysql_free_result($res);
@@ -88,7 +88,7 @@ class gpMySQLTest extends gpSlaveTestBase {
 		$snk->drop();
     }
 
-    public function testAddArcsFromSource() {
+    public function testAddArcsFromSourceObject() {
         $this->makeTable( "test", "a", "b" );
         $this->gp->mysql_query( "INSERT INTO test VALUES (1, 11)" );
         $this->gp->mysql_query( "INSERT INTO test VALUES (1, 12)" );
@@ -96,7 +96,7 @@ class gpMySQLTest extends gpSlaveTestBase {
         $this->gp->mysql_query( "INSERT INTO test VALUES (11, 112)" );
         
 		//-----------------------------------------------------------
-        $src = $this->gp->make_source( "test", "a", "b" );
+        $src = $this->gp->make_source( new gpMySQLTable("test", "a", "b") );
         $this->gp->add_arcs( $src );
 		$src->close();
 		
@@ -116,7 +116,62 @@ class gpMySQLTest extends gpSlaveTestBase {
 		) ), "sucessors of (2)" );
     }
 
-    public function testSuccessorsToSink() {
+    public function testAddArcsFromSourceShorthand() {
+        $this->makeTable( "test", "a", "b" );
+        $this->gp->mysql_query( "INSERT INTO test VALUES (1, 11)" );
+        $this->gp->mysql_query( "INSERT INTO test VALUES (1, 12)" );
+        $this->gp->mysql_query( "INSERT INTO test VALUES (11, 111)" );
+        $this->gp->mysql_query( "INSERT INTO test VALUES (11, 112)" );
+        
+		//-----------------------------------------------------------
+        $src = $this->gp->add_arcs_from( "test a b" );
+		$src->close();
+		
+		$this->assertStatus( 'OK' );
+		$this->assertStatsValue( 'ArcCount', 4 );
+		
+		$arcs = $this->gp->capture_list_successors( 1 );		
+		$this->assertTrue( gpConnectionTestBase::setEquals( $arcs, array(
+			array( 11 ),
+			array( 12 ),
+		) ), "sucessors of (1)" );
+		
+		$arcs = $this->gp->capture_list_successors( 11 );
+		$this->assertTrue( gpConnectionTestBase::setEquals( $arcs, array(
+			array( 111 ),
+			array( 112 ),
+		) ), "sucessors of (2)" );
+		
+		//-----------------------------------------------------------
+		$this->gp->clear();
+		$stats = $this->gp->capture_stats_map();
+		$this->assertEquals( 0, $stats['ArcCount'], "ArcCount" );
+
+		$this->gp->setDebug(true);
+        $src = $this->gp->add_arcs_from( "select a, b from test" );
+		$src->close();
+		
+		$stats = $this->gp->capture_stats_map();
+		$this->assertEquals( 4, $stats['ArcCount'], "ArcCount" );
+		
+		//-----------------------------------------------------------
+		$this->gp->clear();
+
+        $src = $this->gp->add_arcs_from( array("test", "a", "b") );
+		$src->close();
+		
+		$this->assertStatsValue( 'ArcCount', 4 );
+
+		//-----------------------------------------------------------
+		$this->gp->clear();
+
+        $src = $this->gp->add_arcs_from( new gpMySQLTable("test", "a", "b") );
+		$src->close();
+		
+		$this->assertStatsValue( 'ArcCount', 4 );
+    }
+
+    public function testSuccessorsToSinkObject() {
 		$this->gp->add_arcs( array(
 			array( 1, 11 ),
 			array( 1, 12 ),
@@ -125,18 +180,18 @@ class gpMySQLTest extends gpSlaveTestBase {
 		) );
         
 		//-----------------------------------------------------------
-		$snk = $this->gp->make_temp_sink( "n" );
+		$snk = $this->gp->make_temp_sink( new gpMySQLTable("?", "n") );
         $src = $this->gp->traverse_successors( 1, 8, $snk );
         $snk->close();
         $table = $snk->getTable();
         
-		$res = $this->gp->mysql_query( "SELECT n FROM $table ORDER BY n");
+		$res = $this->gp->mysql_query( "SELECT n FROM ".$table->get_name()." ORDER BY n");
 		
-		$this->assertTrue( gpTestBase::arrayEquals( array('n' => 1), $r = $this->gp->mysql_fetch_assoc($res) ), "expected row to be 1 got " . var_export($r, true) );
-		$this->assertTrue( gpTestBase::arrayEquals( array('n' => 11), $r = $this->gp->mysql_fetch_assoc($res) ), "expected row to be 11, got " . var_export($r, true) );
-		$this->assertTrue( gpTestBase::arrayEquals( array('n' => 12), $r = $this->gp->mysql_fetch_assoc($res) ), "expected row to be 12, got " . var_export($r, true) );
-		$this->assertTrue( gpTestBase::arrayEquals( array('n' => 111), $r = $this->gp->mysql_fetch_assoc($res) ), "expected row to be 111, got " . var_export($r, true) );
-		$this->assertTrue( gpTestBase::arrayEquals( array('n' => 112), $r = $this->gp->mysql_fetch_assoc($res) ), "expected row to be 112, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 1), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 1 got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 11), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 11, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 12), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 12, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 111), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 111, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 112), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 112, got " . var_export($r, true) );
 		$this->assertFalse(  $this->gp->mysql_fetch_assoc($res), "expected next row to be false" );
 		
 		$this->gp->mysql_free_result($res);
@@ -151,17 +206,17 @@ class gpMySQLTest extends gpSlaveTestBase {
 		) );
         
 		//-----------------------------------------------------------
-        $snk = $this->gp->traverse_successors_into( 1, 8, "? x y" );
+        $snk = $this->gp->traverse_successors_into( 1, 8, "? n" );
         $snk->close();
         $table = $snk->getTable();
         
-		$res = $this->gp->mysql_query( "SELECT n FROM $table ORDER BY n");
+		$res = $this->gp->mysql_query( "SELECT n FROM ".$table->get_name()." ORDER BY n");
 		
-		$this->assertTrue( gpTestBase::arrayEquals( array('n' => 1), $r = $this->gp->mysql_fetch_assoc($res) ), "expected row to be 1 got " . var_export($r, true) );
-		$this->assertTrue( gpTestBase::arrayEquals( array('n' => 11), $r = $this->gp->mysql_fetch_assoc($res) ), "expected row to be 11, got " . var_export($r, true) );
-		$this->assertTrue( gpTestBase::arrayEquals( array('n' => 12), $r = $this->gp->mysql_fetch_assoc($res) ), "expected row to be 12, got " . var_export($r, true) );
-		$this->assertTrue( gpTestBase::arrayEquals( array('n' => 111), $r = $this->gp->mysql_fetch_assoc($res) ), "expected row to be 111, got " . var_export($r, true) );
-		$this->assertTrue( gpTestBase::arrayEquals( array('n' => 112), $r = $this->gp->mysql_fetch_assoc($res) ), "expected row to be 112, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 1), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 1 got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 11), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 11, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 12), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 12, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 111), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 111, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 112), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 112, got " . var_export($r, true) );
 		$this->assertFalse(  $this->gp->mysql_fetch_assoc($res), "expected next row to be false" );
 		
 		$this->gp->mysql_free_result($res);

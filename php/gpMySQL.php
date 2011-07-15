@@ -3,14 +3,16 @@
 class gpMySQLSource extends gpDataSource {
 	var $glue;
 	var $result;
-	var $field1;
-	var $field2;
+	var $table;
 	
-	public function __construct( gpMySQLGlue $glue, $result, $field1, $field2 = null) {
+	public function __construct( gpMySQLGlue $glue, $result, $table) {
 		$this->glue = $glue;
 		$this->result = $result;
-		$this->field1 = $field1;
-		$this->field2 = $field2;
+		$this->table = $table;
+		
+		$fields = $table->get_fields();
+		$this->field1 = @$fields[0];
+		$this->field2 = @$fields[1];
 	}
 
 	public function nextRow() {
@@ -33,18 +35,86 @@ class gpMySQLSource extends gpDataSource {
 	}
 }
 
+class gpMySQLTable {
+	private $name;
+	private $field1;
+	private $field2;
+	
+	function __construct($name, $field1, $field2 = null) {
+		$this->name = $name;
+		$this->field1 = $field1;
+		$this->field2 = $field2;
+	}
+	
+	function get_name() {
+		return $this->name;
+	}  
+
+	function get_field1() {
+		return $this->field1;
+	}
+	
+	function get_field2() {
+		return $this->field2;
+	}
+
+	function get_fields() {
+		if ( $this->field2 ) return array( $this->field1, $this->field2 );
+		else return array( $this->field1 );
+	}  
+
+	function get_field_list() {
+		if ( $this->field2 ) return "{$this->field1}, {$this->field2}";
+		else return $this->field1;
+	}  
+
+	function get_select() {
+		return "SELECT " . $this->get_field_list() . " FROM " . $this->get_name();
+	}  
+
+	function get_insert( $ignore = false ) {
+		$ig = $ignore ? "IGNORE" : "";
+		return "INSERT $ig INTO " . $this->get_name() . " ( " . $this->get_field_list() . " ) ";
+	}  
+
+	function get_order_by() {
+		return "ORDER BY " . $this->get_field_list();
+	}  
+}
+
+class gpMySQLSelect extends gpMySQLTable {
+	var $select;
+	
+	function __construct($select) {
+		if ( preg_match('/^\s*select\s+(.*?)\s+from\s+([^ ]+)(?:\s+(.*))?/is', $select, $m) ) {
+			$this->select = $select;
+			
+			$n = $m[2];
+			$ff = preg_split('/\s*,\s*/', $m[1]);
+			
+			parent::__construct($n, $ff[0], @$ff[1]);
+		} else {
+			throw new gpUsageException("can't parse statement: " . $select);
+		}
+	}
+
+	function get_select() {
+		return $this->select;
+	}  
+
+	function get_insert( $ignore = false ) {
+		throw new gpUsageEsxception("can't create insert statement for: " . $this->select);
+	}  
+}
+
 abstract class gpMySQLInserter {
 	var $glue;
 	var $table;
 	var $fields;
 
-	function __construct ( gpMySQLGlue $glue, $table, $field1 = null, $field2 = null ) {
+	function __construct ( gpMySQLGlue $glue, gpMySQLTable $table ) {
 		$this->glue = $glue;
 		$this->table = $table;
-		
-		$this->fields = array();
-		if ($field1) $this->fields[] = $field1;
-		if ($field2) $this->fields[] = $field2;
 	}
 	
 	public abstract function insert( $values );
@@ -81,13 +151,7 @@ class gpMySQLSimpleInserter extends gpMySQLInserter {
 	}
 	
 	protected function insert_command( ) {
-		$sql = "INSERT IGNORE INTO {$this->table} ";
-		
-		if ( $this->fields ) {
-			$sql .= " ( ". implode(",", $this->fields) ." ) ";
-		}
-		
-		return $sql;
+		return $this->table->get_insert();
 	}
 	
 	public function insert( $values ) {
@@ -123,7 +187,7 @@ class gpMySQLTempSink extends gpMySQLSink {
 	var $glue;
 	var $table;
 	
-	public function __construct( gpMySQLInserter $inserter, gpMySQLGlue $glue, $table ) {
+	public function __construct( gpMySQLInserter $inserter, gpMySQLGlue $glue, gpMySQLTable $table ) {
 		parent::__construct( $inserter );
 		
 		$this->glue = $glue;
@@ -131,13 +195,17 @@ class gpMySQLTempSink extends gpMySQLSink {
 	}
 	
 	public function drop( ) {
-		$sql = "DROP TEMPORARY TABLE IF EXISTS " . $this->table; 
+		$sql = "DROP TEMPORARY TABLE IF EXISTS " . $this->table->get_name(); 
 		
 		$ok = $this->glue->mysql_query( $sql );
 		return $ok;
 	}
 	
 	public function getTable() {
+		return $this->table;
+	}
+
+	public function getTableName() {
 		return $this->table;
 	}
 	
@@ -174,32 +242,36 @@ class gpMySQLGlue extends gpConnection {
 	}
 	
 	function gp_call_handler($gp, &$cmd, &$args, &$source, &$sink, &$capture, &$result) {
-		if ( preg_match( '/-into$/', $cmd, $m ) ) {
-			$cmd = preg_replace('/-into?$/', '', $cmd);
+		if ( preg_match( '/-(from|into)$/', $cmd, $m ) ) {
+			$cmd = preg_replace('/-(from|into)?$/', '', $cmd);
+			$action = $m[1];
 			
 			$c = count($args);
+			if ( !$c ) {
+				throw new gpUsageException("expected last argument to be a table spec; " . var_export($args, true));
+			}
+			
 			$t = $args[$c-1];
-			unset($args[$c-1]);
+			$args = array_slice($args, 0, $c-1);
 			
-			$tt = preg_split('/[\s,;]+/', $t); //XXX: FUGLY HACK!
-			$sink = $this->make_sink( $tt[0], @$tt[1], @$tt[2] );
+			if ( is_string($t) ) {
+				if ( preg_match('/^.*select\s+/i', $t) ) $t = new gpMySQLSelect($t);
+				else $t = preg_split( '/\s+|\s*,\s*/', $t ); 
+			}
 			
-			$result = $sink; //XXX: quite useless, but consistent with -from
-		} 
-		
-		if ( preg_match( '/-from$/', $cmd, $m ) ) {
-			$cmd = preg_replace('/-from?$/', '', $cmd);
+			if ( is_array($t) ) $t = new gpMySQLTable( $t[0], $t[1], @$t[2] ); 
+			if ( ! ($t instanceof gpMySQLTable) ) throw new gpUsageException("expected last argument to be a table spec; found " . get_class($t));
 			
-			$c = count($args);
-			$t = $args[$c-1];
-			unset($args[$c-1]);
-			
-			$tt = preg_split('/[\s,;]+/', $t); //XXX: FUGLY HACK!
-			
-			if ( $tt[0] == "?" ) $source = $this->make_temp_source( @$tt[1], @$tt[2] ); 
-			else $source = $this->make_source( $tt[0], @$tt[1], @$tt[2] );
-			
-			$result = $source; //XXX: a bit confusing, and only useful for temp sinks
+			if ( $action == 'into' ) {
+				if ( !$t->get_name() || $t->get_name() == "?" ) $sink = $this->make_temp_sink( $t ); 
+				else $sink = $this->make_sink( $t );
+				
+				$result = $sink; //XXX: quite useless, but consistent with -from
+			} else {
+				$source = $this->make_source( $t );
+				
+				$result = $source; //XXX: a bit confusing, and only useful for temp sinks
+			}
 		} 
 		
 		return true;
@@ -253,55 +325,55 @@ class gpMySQLGlue extends gpConnection {
 		return $id;
 	} 
 	
-	public function make_temp_table( $field1, $field2 = null ) {
-		$table = "gp_temp_" . $this->next_id();
+	public function make_temp_table( $spec ) {
+		$table = $spec->get_name();
+		
+		if ( !$table || $table === '?' ) { 
+			$table = "gp_temp_" . $this->next_id();
+		}
+		
 		$sql = "CREATE TEMPORARY TABLE " . $table; 
 		$sql .= "(";
-		$sql .= $field1 . " INT NOT NULL";
-		if ($field2) $sql .= ", " . $field2 . " INT NOT NULL";
+		$sql .= $spec->get_field1() . " INT NOT NULL";
+		if ($spec->get_field2()) $sql .= ", " . $spec->get_field2() . " INT NOT NULL";
 		$sql .= ")";
 		
 		$this->mysql_query($sql);
 		
-		return $table;
+		return new gpMySQLTable($table, $spec->get_field1(), $spec->get_field2());  
 	}
 
-	protected function new_inserter( $table, $field1, $field2 = null ) {
-		return new gpMySQLSimpleInserter( $this, $table, $field1, $field2 );
+	protected function new_inserter( gpMySQLTable $table ) {
+		return new gpMySQLSimpleInserter( $this, $table );
 	}
 	
-	public function make_temp_sink( $field1, $field2 = null ) {
-		$table = $this->make_temp_table($field1, $field2);
+	public function make_temp_sink( gpMySQLTable $table ) {
+		$table = $this->make_temp_table($table);
 		
-		$ins = $this->new_inserter($table, $field1, $field2);
+		$ins = $this->new_inserter($table);
 		$sink = new gpMySQLTempSink( $ins, $this, $table );
 		
 		return $sink;
 	}
 
-	public function make_sink( $table, $field1, $field2 = null ) {
-		$inserter = $this->new_inserter($table, $field1, $field2);
+	public function make_sink( gpMySQLTable $table ) {
+		$inserter = $this->new_inserter($table);
 		$sink = new gpMySQLSink( $inserter );
 		
 		return $sink;
 	}
 
-	public function make_source( $query, $field1, $field2 = null, $big = false ) {
-		if ( $field2 ) $f = "$field1, $field2";
-		else $f = "$field1";
-		
-		if ( preg_match('/^\s*select\s+/i', $query) ) $sql = $query;
-		else $sql = "SELECT $f FROM $query ";
+	public function make_source( $table, $big = false ) {
+		$sql = $table->get_select();
 		
 		if ( !preg_match('/\s+ORDER\s+BY\s+/i', $sql) ) {
-			if ( $field2 ) $sql .= " ORDER BY $field1, $field2";
-			else $sql .= " ORDER BY $field1";
+			$sql .= ' ' . $table->get_order_by();
 		}
 		
 		if ($big) $res = $this->mysql_unbuffered_query($sql);
 		else $res = $this->mysql_query($sql);
 		
-		$src = new gpMySQLSource( $this, $res, $field1, $field2 );
+		$src = new gpMySQLSource( $this, $res, $table );
 		return $src;
 	}
 
