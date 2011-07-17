@@ -164,6 +164,44 @@ class gpMySQLSimpleInserter extends gpMySQLInserter {
 
 }
 
+class gpMySQLBufferedInserter extends gpMySQLSimpleInserter {
+
+	function __construct ( gpMySQLGlue $glue, gpMySQLTable $table ) {
+		parent::__construct( $glue, $table );
+		$this->buffer = "";
+	}
+
+	public function insert( $values ) {
+		$vlist = $this->as_list($values);
+		$max = $this->glue->get_max_allowed_packet();
+
+		if ( !empty($this->buffer) && ( strlen($this->buffer) + strlen($vlist) + 2 >= $max ) ) {
+			$this->flush();
+		}
+		
+		if ( empty($this->buffer) ) {
+			$this->buffer = $this->insert_command();
+			$this->buffer .= " VALUES ";
+		} else {
+			$this->buffer .= ", ";
+		}
+		
+		$this->buffer .= $vlist;
+
+		if ( strlen($this->buffer) >= $max ) {
+			$this->flush();
+		}
+	}
+	
+	public function flush() {
+		if ( !empty( $this->buffer ) ) {
+			$this->glue->mysql_query( $this->buffer );
+			$this->buffer = "";
+		}
+	}
+
+}
+
 class gpMySQLSink extends gpDataSink {
 	
 	public function __construct( gpMySQLInserter $inserter ) {
@@ -314,6 +352,7 @@ class gpMySQLGlue extends gpConnection {
 		}
 	}
 	
+	
 	function quote_string( $s ) {
 		return "'" . mysql_real_escape_string( $s ) . "'";
 	}
@@ -343,8 +382,26 @@ class gpMySQLGlue extends gpConnection {
 		return new gpMySQLTable($table, $spec->get_field1(), $spec->get_field2());  
 	}
 
+	public function set_max_allowed_packet( $size ) {
+		$this->max_allowed_packet = $size;
+	}
+	
+	public function get_max_allowed_packet() {
+		if ( empty( $this->max_allowed_packet ) ) {
+			$res = $this->mysql_query("select @@max_allowed_packet");
+			$a = $this->mysql_fetch_row( $res );
+			$this->max_allowed_packet = (int)$a[0];
+		}
+
+		if ( empty( $this->max_allowed_packet ) ) {
+			$this->max_allowed_packet = 16 * 1024 * 1024; //fall back to MySQL's default of 16MB
+		}
+		
+		return $this->max_allowed_packet;
+	}
+
 	protected function new_inserter( gpMySQLTable $table ) {
-		return new gpMySQLSimpleInserter( $this, $table );
+		return new gpMySQLBufferedInserter( $this, $table );
 	}
 	
 	public function make_temp_sink( gpMySQLTable $table ) {

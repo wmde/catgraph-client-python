@@ -195,6 +195,25 @@ class gpMySQLTest extends gpSlaveTestBase {
 		$this->assertFalse(  $this->gp->mysql_fetch_assoc($res), "expected next row to be false" );
 		
 		$this->gp->mysql_free_result($res);
+        
+		//-----------------------------------------------------------
+		$this->gp->set_max_allowed_packet(6); //force inserter to flush intermittedly
+		
+		$snk = $this->gp->make_temp_sink( new gpMySQLTable("?", "n") );
+        $src = $this->gp->traverse_successors( 1, 8, $snk );
+        $snk->close();
+        $table = $snk->getTable();
+        
+		$res = $this->gp->mysql_query( "SELECT n FROM ".$table->get_name()." ORDER BY n");
+		
+		$this->assertEquals(array('n' => 1), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 1 got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 11), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 11, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 12), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 12, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 111), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 111, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 112), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 112, got " . var_export($r, true) );
+		$this->assertFalse(  $this->gp->mysql_fetch_assoc($res), "expected next row to be false" );
+		
+		$this->gp->mysql_free_result($res);
     }
 
     public function testSuccessorsToSinkShorthand() {
