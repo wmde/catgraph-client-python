@@ -147,7 +147,7 @@ class gpMySQLTest extends gpSlaveTestBase {
 		$stats = $this->gp->capture_stats_map();
 		$this->assertEquals( 0, $stats['ArcCount'], "ArcCount" );
 
-		$this->gp->setDebug(true);
+		//$this->gp->setDebug(true);
         $src = $this->gp->add_arcs_from( "select a, b from test" );
 		$src->close();
 		
@@ -209,6 +209,59 @@ class gpMySQLTest extends gpSlaveTestBase {
         $snk = $this->gp->traverse_successors_into( 1, 8, "? n" );
         $snk->close();
         $table = $snk->getTable();
+        
+		$res = $this->gp->mysql_query( "SELECT n FROM ".$table->get_name()." ORDER BY n");
+		
+		$this->assertEquals(array('n' => 1), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 1 got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 11), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 11, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 12), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 12, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 111), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 111, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 112), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 112, got " . var_export($r, true) );
+		$this->assertFalse(  $this->gp->mysql_fetch_assoc($res), "expected next row to be false" );
+		
+		$this->gp->mysql_free_result($res);
+		$snk->drop();
+
+		//---------------------------------------------------------
+        $snk = $this->gp->traverse_successors_into( 1, 8, array("?", "n") );
+        $snk->close();
+        $table = $snk->getTable();
+        
+		$res = $this->gp->mysql_query( "SELECT n FROM ".$table->get_name()." ORDER BY n");
+		
+		$this->assertEquals(array('n' => 1), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 1 got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 11), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 11, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 12), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 12, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 111), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 111, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 112), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 112, got " . var_export($r, true) );
+		$this->assertFalse(  $this->gp->mysql_fetch_assoc($res), "expected next row to be false" );
+		
+		$this->gp->mysql_free_result($res);
+		$snk->drop();
+
+		//---------------------------------------------------------
+        $snk = $this->gp->traverse_successors_into( 1, 8, new gpMySQLTable("?", "n") );
+        $snk->close();
+        $table = $snk->getTable();
+        
+		$res = $this->gp->mysql_query( "SELECT n FROM ".$table->get_name()." ORDER BY n");
+		
+		$this->assertEquals(array('n' => 1), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 1 got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 11), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 11, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 12), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 12, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 111), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 111, got " . var_export($r, true) );
+		$this->assertEquals(array('n' => 112), $r = $this->gp->mysql_fetch_assoc($res) , "expected row to be 112, got " . var_export($r, true) );
+		$this->assertFalse(  $this->gp->mysql_fetch_assoc($res), "expected next row to be false" );
+		
+		$this->gp->mysql_free_result($res);
+		$snk->drop();
+
+		//---------------------------------------------------------
+        $this->makeTable( "test_n", "n" );
+
+        $table = new gpMySQLTable("test_n", "n");
+        $snk = $this->gp->traverse_successors_into( 1, 8, $table );
+        $snk->close();
         
 		$res = $this->gp->mysql_query( "SELECT n FROM ".$table->get_name()." ORDER BY n");
 		
