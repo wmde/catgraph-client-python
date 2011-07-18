@@ -15,7 +15,7 @@ class gpMySQLTest extends gpSlaveTestBase {
 		$this->dump = new gpPipeSink( STDOUT ); 
 
 		try {
-			$this->gp = gpMySQLGLue::new_slave_connection( $gpTestGraphCorePath );
+			$this->gp = gpMySQLGlue::new_slave_connection( $gpTestGraphCorePath );
 			$this->gp->connect();
 		} catch ( gpException $ex ) {
 			print("Unable to launch graphcore instance from $gpTestGraphCorePath, please make sure graphcore is installed and check the \$gpTestGraphCorePath configuration options in gpTestConfig.php.\nOriginal error: " . $ex->getMessage() . "\n");
@@ -31,11 +31,10 @@ class gpMySQLTest extends gpSlaveTestBase {
 		}
 	}
 	
-    protected function makeTable( $table, $field1, $field2=null ) {
+    protected function makeTable( $table, $fieldSpec ) {
 		$sql = "CREATE TEMPORARY TABLE IF NOT EXISTS " . $table; 
 		$sql .= "(";
-		$sql .= $field1 . " INT NOT NULL";
-		if ($field2) $sql .= ", " . $field2 . " INT NOT NULL";
+		$sql .= $fieldSpec;
 		$sql .= ")";
 		
 		$this->gp->mysql_query($sql);
@@ -45,7 +44,7 @@ class gpMySQLTest extends gpSlaveTestBase {
 	}
 	
     public function testSource() {
-        $this->makeTable( "test", "a", "b" );
+        $this->makeTable( "test", "a INT NOT NULL, b INT NOT NULL" );
         $this->gp->mysql_query( "INSERT INTO test VALUES (3, 8)" );
         $this->gp->mysql_query( "INSERT INTO test VALUES (7, 9)" );
         $this->gp->mysql_query( "INSERT INTO test VALUES (11, 11)" );
@@ -69,6 +68,21 @@ class gpMySQLTest extends gpSlaveTestBase {
         $src->close();
     }
 
+    public function testSelectInto() {
+        $this->makeTable( "test", "a INT NOT NULL, b INT NOT NULL" );
+        $this->gp->mysql_query( "INSERT INTO test VALUES (3, 8)" );
+        $this->gp->mysql_query( "INSERT INTO test VALUES (7, 9)" );
+        $this->gp->mysql_query( "INSERT INTO test VALUES (11, 11)" );
+        
+		//-----------------------------------------------------------
+		$sink = new gpArraySink();
+        $this->gp->select_into( "select a, b from test order by a, b", $sink );
+
+		$data = $sink->getData();
+		
+        $this->assertEquals(array(array(3, 8), array(7, 9), array(11, 11)), $data );
+    }
+
     public function testTempSink() {
 		$snk = $this->gp->make_temp_sink( new gpMySQLTable("?", "a", "b") );
 		$table = $snk->getTable();
@@ -89,7 +103,7 @@ class gpMySQLTest extends gpSlaveTestBase {
     }
 
     public function testAddArcsFromSourceObject() {
-        $this->makeTable( "test", "a", "b" );
+        $this->makeTable( "test", "a INT NOT NULL, b INT NOT NULL" );
         $this->gp->mysql_query( "INSERT INTO test VALUES (1, 11)" );
         $this->gp->mysql_query( "INSERT INTO test VALUES (1, 12)" );
         $this->gp->mysql_query( "INSERT INTO test VALUES (11, 111)" );
@@ -117,7 +131,7 @@ class gpMySQLTest extends gpSlaveTestBase {
     }
 
     public function testAddArcsFromSourceShorthand() {
-        $this->makeTable( "test", "a", "b" );
+        $this->makeTable( "test", "a INT NOT NULL, b INT NOT NULL" );
         $this->gp->mysql_query( "INSERT INTO test VALUES (1, 11)" );
         $this->gp->mysql_query( "INSERT INTO test VALUES (1, 12)" );
         $this->gp->mysql_query( "INSERT INTO test VALUES (11, 111)" );
@@ -276,7 +290,7 @@ class gpMySQLTest extends gpSlaveTestBase {
 		$snk->drop();
 
 		//---------------------------------------------------------
-        $this->makeTable( "test_n", "n" );
+        $this->makeTable( "test_n", "n INT NOT NULL" );
 
         $table = new gpMySQLTable("test_n", "n");
         $snk = $this->gp->traverse_successors_into( 1, 8, $table );

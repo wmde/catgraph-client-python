@@ -75,7 +75,27 @@ class gpCoreTest extends gpSlaveTestBase
 		) );
 		
 		$this->assertStatsValue( 'ArcCount', 4 );
-		}
+	}
+
+    public function testTraverseSuccessors() {
+		$this->gp->add_arcs( array(
+			array( 1, 11 ),
+			array( 1, 12 ),
+			array( 11, 111 ),
+			array( 11, 112 ),
+			array( 111, 1111 ),
+			array( 111, 1112 ),
+			array( 112, 1121 ),
+		) );
+		
+		$this->assertStatsValue( 'ArcCount', 7 );
+		
+		//--------------------------------------------
+		$succ = $this->gp->capture_traverse_successors( 11, 5 );
+
+		$this->assertEquals( array( array(11), array(111), array(112), array(1111), array(1112), array(1121), ), $succ );
+	}
+	
     //TODO: add all the tests we have in the talkback test suit
     
 }

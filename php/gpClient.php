@@ -442,7 +442,9 @@ class gpConnection {
 	protected $status = null;
 	protected $statusMessage = null;
 	protected $response = null;
+	
 	protected $call_handlers = array();
+	protected $exec_handlers = array();
 	
 	public $allowPipes = false;
 	public $strictArguments = true;
@@ -460,6 +462,10 @@ class gpConnection {
 	
 	public function addCallHandler( $handler ) { //$handler($this, &$cmd, &$args, &$source, &$sink, &$capture, &$result)
 		$this->call_handlers[] = $handler;
+	}
+	
+	public function addExecHandler( $handler ) { //$handler($this, &$command, &$source, &$sink, &$result)
+		$this->exec_handlers[] = $handler;
 	}
 	
 	public function getStatus() {
@@ -568,11 +574,25 @@ class gpConnection {
 			}
 		}
 		
-		try {
-			$status = $this->exec( $command, $source, $sink, $has_output );
-		} catch ( gpProcessorException $e ) {
-			if ( !$try ) throw $e;
-			else return false;
+		foreach ( $this->exec_handlers as $handler ) {
+			$continue = call_user_func_array( $handler, array( $this, &$command, &$source, &$sink, &$result) );
+			if ( $continue === false ) return $result;
+		}
+		
+		if ( method_exists( $this, $command[0] ) ) {
+			$cmd = $command[0];
+			$args = array_slice( $command, 1 );
+			$args[] = $source;
+			$args[] = $sink;
+			
+			$status = call_user_func_array( array($this, $cmd), $args );
+		} else {
+			try {
+				$status = $this->exec( $command, $source, $sink, $has_output );
+			} catch ( gpProcessorException $e ) {
+				if ( !$try ) throw $e;
+				else return false;
+			}
 		}
 
 		//note: call modifiers like capture change the return type!

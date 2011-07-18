@@ -19,3 +19,6 @@ $gpTestMySQLHost = 'localhost';
 $gpTestMySQLUser = 'gptest';
 $gpTestMySQLPassword = 'gptest';
 $gpTestMySQLDatabase = 'gptest';
+
+//mediawiki database info
+$gpTestMediaWikiTablePrefix = 'mw_';

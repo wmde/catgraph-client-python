@@ -1,4 +1,5 @@
 <?php
+require_once(dirname(__FILE__) . "/gpClient.php");
 
 class gpMySQLSource extends gpDataSource {
 	var $glue;
@@ -256,7 +257,7 @@ class gpMySQLGlue extends gpConnection {
 	function __construct( $transport ) {
 		parent::__construct($transport);
 
-		$h = array( $this, 'gp_call_handler' );
+		$h = array( $this, 'gp_mysql_call_handler' );
 		$this->addCallHandler( $h );
 	}
 	
@@ -279,7 +280,7 @@ class gpMySQLGlue extends gpConnection {
 		$this->connection = $connection;
 	}
 	
-	function gp_call_handler($gp, &$cmd, &$args, &$source, &$sink, &$capture, &$result) {
+	function gp_mysql_call_handler($gp, &$cmd, &$args, &$source, &$sink, &$capture, &$result) {
 		if ( preg_match( '/-(from|into)$/', $cmd, $m ) ) {
 			$cmd = preg_replace('/-(from|into)?$/', '', $cmd);
 			$action = $m[1];
@@ -317,6 +318,10 @@ class gpMySQLGlue extends gpConnection {
 	
 	private function call_mysql( $name, $args ) {
 		$rc = false;
+		
+		if ( method_exists( $this, $name ) ) {
+			return call_user_func_array( array($this, $cmd), $args );
+		}
 		
 		//see if there's a resource in $args
 		foreach ( $args as $a ) {
@@ -382,15 +387,22 @@ class gpMySQLGlue extends gpConnection {
 		return new gpMySQLTable($table, $spec->get_field1(), $spec->get_field2());  
 	}
 
+	public function mysql_query_value( $sql ) {
+		$res = $this->mysql_query( $sql );
+		$a = $this->mysql_fetch_row( $res );
+		$this->mysql_free_result( $res );
+		
+		if ( !$a ) return null;
+		else return $a[0];
+	}
+	
 	public function set_max_allowed_packet( $size ) {
 		$this->max_allowed_packet = $size;
 	}
 	
 	public function get_max_allowed_packet() {
 		if ( empty( $this->max_allowed_packet ) ) {
-			$res = $this->mysql_query("select @@max_allowed_packet");
-			$a = $this->mysql_fetch_row( $res );
-			$this->max_allowed_packet = (int)$a[0];
+			$this->max_allowed_packet = $this->mysql_query_value("select @@max_allowed_packet");
 		}
 
 		if ( empty( $this->max_allowed_packet ) ) {
@@ -400,6 +412,24 @@ class gpMySQLGlue extends gpConnection {
 		return $this->max_allowed_packet;
 	}
 
+	public function select_into( $query, gpDataSink $sink ) {
+		if ( is_string($query) ) {
+			$table = new gpMySQLSelect( $query );
+			$sql = $query;
+		} else {
+			$table = $query;
+			$sql = $src->get_select();
+		}
+		
+		$res = $this->mysql_query( $sql );
+		$src = new gpMySQLSource( $this, $res, $table );
+		
+		$c = $this->copy( $src, $sink, '+' );
+		$src->close();
+		
+		return $c;
+	}
+	
 	protected function new_inserter( gpMySQLTable $table ) {
 		return new gpMySQLBufferedInserter( $this, $table );
 	}
