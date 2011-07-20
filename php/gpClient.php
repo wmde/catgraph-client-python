@@ -126,8 +126,12 @@ class gpFileSource extends gpPipeSource {
 abstract class gpDataSink {
 	public abstract function putRow( $row );
 	
-	public function close() {
+	public function flush() {
 		// noop
+	}
+
+	public function close() {
+		$this->flush();
 	}
 }
 
@@ -179,6 +183,10 @@ class gpPipeSink extends gpDataSink {
 		#print "--- $s\n";
 		gpPipeTransport::send_to( $this->hout, $s . GP_LINEBREAK ); 
 	}
+	
+	public function flush() {
+		fflush( $this->hout );
+	}
 }
 
 class gpFileSink extends gpPipeSink {
@@ -199,6 +207,7 @@ class gpFileSink extends gpPipeSink {
 	}
 
 	public function close( ) {
+		parent::close();
 		fclose( $this->hout ); 
 	}
 }
@@ -464,7 +473,7 @@ class gpConnection {
 		$this->call_handlers[] = $handler;
 	}
 	
-	public function addExecHandler( $handler ) { //$handler($this, &$command, &$source, &$sink, &$result)
+	public function addExecHandler( $handler ) { //$handler($this, &$command, &$source, &$sink, &$has_output, &$status)
 		$this->exec_handlers[] = $handler;
 	}
 	
@@ -574,25 +583,33 @@ class gpConnection {
 			}
 		}
 		
-		foreach ( $this->exec_handlers as $handler ) {
-			$continue = call_user_func_array( $handler, array( $this, &$command, &$source, &$sink, &$result) );
-			if ( $continue === false ) return $result;
-		}
-		
-		if ( method_exists( $this, $command[0] ) ) {
-			$cmd = $command[0];
-			$args = array_slice( $command, 1 );
-			$args[] = $source;
-			$args[] = $sink;
-			
-			$status = call_user_func_array( array($this, $cmd), $args );
-		} else {
-			try {
-				$status = $this->exec( $command, $source, $sink, $has_output );
-			} catch ( gpProcessorException $e ) {
-				if ( !$try ) throw $e;
-				else return false;
+		try {
+			$do_exec = true;
+			foreach ( $this->exec_handlers as $handler ) {
+				$continue = call_user_func_array( $handler, array( $this, &$command, &$source, &$sink, &$has_output, &$status) );
+				
+				if ( $continue === false ) {
+					$do_exec = false;
+					break;
+				}
 			}
+		
+			if ( $do_exec ) {
+				if ( method_exists( $this, $command[0] ) ) {
+					$cmd = $command[0];
+					$args = array_slice( $command, 1 );
+					$args[] = $source;
+					$args[] = $sink;
+					$args[] &= $has_output;
+					
+					$status = call_user_func_array( array($this, $cmd), $args );
+				} else {
+					$status = $this->exec( $command, $source, $sink, $has_output );
+				}
+			}
+		} catch ( gpProcessorException $e ) { //XXX: catch more exceptions? ClientException? Protocolexception?
+			if ( !$try ) throw $e;
+			else return false;
 		}
 
 		//note: call modifiers like capture change the return type!
@@ -854,6 +871,8 @@ class gpConnection {
 				$this->trace(__METHOD__, "#", $row);
 			}
 		}
+		
+		if ( $sink ) $sink->flush();
 	}
 
 	public function close() {

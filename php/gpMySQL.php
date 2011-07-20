@@ -11,16 +11,15 @@ class gpMySQLSource extends gpDataSource {
 		$this->result = $result;
 		$this->table = $table;
 		
-		$fields = $table->get_fields();
-		$this->field1 = @$fields[0];
-		$this->field2 = @$fields[1];
+		$this->field1 = $table->get_field1(true);
+		$this->field2 = $table->get_field2(true);
 	}
 
 	public function nextRow() {
 		$raw = $this->glue->mysql_fetch_assoc( $this->result );
 		
 		if ( !$raw ) return null;
-		 
+		
 		$row = array();
 		$row[] = $raw[ $this->field1 ];
 		
@@ -51,12 +50,18 @@ class gpMySQLTable {
 		return $this->name;
 	}  
 
-	function get_field1() {
-		return $this->field1;
+	static function strip_qualifier( $n ) {
+		return preg_replace('/^.*\./', '', $n);
 	}
 	
-	function get_field2() {
-		return $this->field2;
+	function get_field1( $basename_only = false ) {
+		if ( $basename_only ) return gpMySQLTable::strip_qualifier( $this->field1 );
+		else return $this->field1;
+	}
+	
+	function get_field2( $basename_only = false ) {
+		if ( $basename_only ) return gpMySQLTable::strip_qualifier( $this->field2 );
+		else return $this->field2;
 	}
 
 	function get_fields() {
@@ -92,6 +97,11 @@ class gpMySQLSelect extends gpMySQLTable {
 			
 			$n = $m[2];
 			$ff = preg_split('/\s*,\s*/', $m[1]);
+			
+			foreach ( $ff as $i => $f ) {
+				$f = preg_replace('/^.*\s+AS\s+/i', '', $f); // use alias if defined
+				$ff[$i] = $f;
+			}
 			
 			parent::__construct($n, $ff[0], @$ff[1]);
 		} else {
@@ -131,24 +141,8 @@ abstract class gpMySQLInserter {
 
 class gpMySQLSimpleInserter extends gpMySQLInserter {
 
-	protected function as_list( $values ) {
-		$sql = "(";
-
-		$first = true;
-		foreach ( $values as $v ) {
-			if ( !$first ) $sql .= ",";
-			else $first = false;
-			
-			if ( is_null($v) ) $sql.= "NULL";
-			else if ( is_int($v) ) $sql.= $v;
-			else if ( is_float($v) ) $sql.= $v;
-			else if ( is_str($v) ) $sql.= $this->glue->quote_string($v); //TODO: charset...
-			else throw new gpUsageException("bad value type: " . gettype($v));
-		}
-		
-		$sql .= ")";
-		
-		return $sql;
+	public function as_list( $values ) {
+		return $this->glue->as_list( $values );
 	}
 	
 	protected function insert_command( ) {
@@ -213,7 +207,12 @@ class gpMySQLSink extends gpDataSink {
 		$this->inserter->insert( $row );
 	}
 	
+	public function flush( ) {
+		$this->inserter->flush();
+	}
+	
 	public function close( ) {
+		parent::close();
 		$this->inserter->close();
 	}
 	
@@ -358,8 +357,28 @@ class gpMySQLGlue extends gpConnection {
 	}
 	
 	
-	function quote_string( $s ) {
+	public function quote_string( $s ) {
 		return "'" . mysql_real_escape_string( $s ) . "'";
+	}
+	
+	public function as_list( $values ) {
+		$sql = "(";
+
+		$first = true;
+		foreach ( $values as $v ) {
+			if ( !$first ) $sql .= ",";
+			else $first = false;
+			
+			if ( is_null($v) ) $sql.= "NULL";
+			else if ( is_int($v) ) $sql.= $v;
+			else if ( is_float($v) ) $sql.= $v;
+			else if ( is_str($v) ) $sql.= $this->glue->quote_string($v); //TODO: charset...
+			else throw new gpUsageException("bad value type: " . gettype($v));
+		}
+		
+		$sql .= ")";
+		
+		return $sql;
 	}
 	
 	private function next_id() {
@@ -496,5 +515,42 @@ class gpMySQLGlue extends gpConnection {
 
 	public static function new_slave_connection( $command, $cwd = null, $env = null ) {
 		return new gpMySQLGlue( new gpSlaveTransport($command, $cwd, $env) );
+	}
+	
+	public function dump_query( $sql ) {
+		print "\n*** $sql ***\n";
+		
+		$res = $this->mysql_query( $sql );
+		if ( !$res ) return false; 
+		
+		return $this->dump_result( $res );
+	}
+	
+	public function dump_result( $res ) {
+		$keys = null;
+		$c = 0;
+		
+		print "\n";
+		while ( $row = $this->mysql_fetch_assoc( $res ) ) {
+			if ( $keys === null ) {
+				$keys = array_keys( $row );
+				
+				foreach ( $keys as $k ) {
+					print "$k\t";
+				}
+			}
+			
+			foreach ( $row as $k => $v ) {
+				print "$v\t";
+			}
+			
+			print "\n";
+			$c++;
+		}
+		
+		print "-----------------------------\n";
+		print "$c rows";
+		
+		return $c;
 	}
 }

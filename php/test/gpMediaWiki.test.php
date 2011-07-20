@@ -30,8 +30,9 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 		}
 	}
 
-    protected function makeTable( $table, $fieldSpec ) {
-		$sql = "CREATE TEMPORARY TABLE IF NOT EXISTS " . $table; 
+    protected function makeTable( $table, $fieldSpec, $temp = false ) {
+		$t = $temp ? " TEMPORARY " : "";
+		$sql = "CREATE $t TABLE IF NOT EXISTS " . $table; 
 		$sql .= "(";
 		$sql .= $fieldSpec;
 		$sql .= ")";
@@ -51,7 +52,7 @@ class gpMediaWikiTest extends gpSlaveTestBase {
     }
 
 	public function makeWikiStructure( ) {
-        $p = $this->makeWikiTable( "page", "page_id INT NOT NULL, page_namespace INT NOT NULL, page_title VARCHAR(255) NOT NULL" );
+        $p = $this->makeWikiTable( "page", "page_id INT NOT NULL, page_namespace INT NOT NULL, page_title VARCHAR(255) NOT NULL, PRIMARY KEY (page_id), UNIQUE KEY (page_namespace, page_title)" );
         $this->gp->mysql_query( "INSERT INTO $p VALUES (1, ".NS_MAIN.", 'Main_Page')" );
         $this->gp->mysql_query( "INSERT INTO $p VALUES (2, ".NS_PROJECT.", 'Help_Out')" );
         
@@ -66,7 +67,7 @@ class gpMediaWikiTest extends gpSlaveTestBase {
         $this->gp->mysql_query( "INSERT INTO $p VALUES (1120, ".NS_CATEGORY.", 'Bad_Cheese')" );
         $this->gp->mysql_query( "INSERT INTO $p VALUES (1122, ".NS_MAIN.", 'Toe_Cheese')" );
         
-        $cl = $this->makeWikiTable( "categorylinks", "cl_from INT NOT NULL, cl_to VARCHAR(255) NOT NULL" );
+        $cl = $this->makeWikiTable( "categorylinks", "cl_from INT NOT NULL, cl_to VARCHAR(255) NOT NULL, PRIMARY KEY (cl_from, cl_to), INDEX cl_to (cl_to)" );
         $this->gp->mysql_query( "INSERT INTO $cl VALUES (1, 'Portals')" );
         $this->gp->mysql_query( "INSERT INTO $cl VALUES (2, 'Portals')" );
         $this->gp->mysql_query( "INSERT INTO $cl VALUES (120, 'ROOT')" );
@@ -81,30 +82,85 @@ class gpMediaWikiTest extends gpSlaveTestBase {
         $this->gp->mysql_query( "INSERT INTO $cl VALUES (1122, 'Bad_Cheese')" );
 	}
         
+        
+	//////////////////////////////////////////////////////////////////////////////////////
+
+    public function testTraverseSuccessors() {
+		$this->gp->add_arcs( array(
+			array( 1, 11 ),
+			array( 1, 12 ),
+			array( 11, 111 ),
+			array( 11, 112 ),
+			array( 111, 1111 ),
+			array( 111, 1112 ),
+			array( 112, 1121 ),
+		) );
+		
+		$this->assertStatsValue( 'ArcCount', 7 );
+		
+		//--------------------------------------------
+		$succ = $this->gp->capture_traverse_successors( 11, 5 );
+
+		$this->assertEquals( array( array(11), array(111), array(112), array(1111), array(1112), array(1121), ), $succ );
+	}
+        
 	//////////////////////////////////////////////////////////////////////////////////////
 
     public function testAddArcsFromCategoryStructure() {
         $this->makeWikiStructure();
         
+		//-----------------------------------------------------------
 		$this->gp->add_arcs_from_category_structure();
 
 		//-----------------------------------------------------------
-		$a = $this->capture_list_successors( 10 );
+		$a = $this->gp->capture_list_successors( 10 );
         $this->assertEquals(array(array(110), array(120)), $a );
 
-		$a = $this->capture_list_predecessors( 1120 );
-        $this->assertEquals(array(array(120), array(1110)), $a );
+		$a = $this->gp->capture_list_predecessors( 1120 );
+        $this->assertEquals(array(array(120), array(2110)), $a );
 
-		$a = $this->capture_traverse_successors( 110, 5 );
+		$a = $this->gp->capture_traverse_successors( 110, 5 );
         $this->assertEquals(array(array(110), array(1110), array(2110), array(1120)), $a );
     }
 
     public function testWikiSubcategories() {
         $this->makeWikiStructure();
-		
+		$this->gp->add_arcs_from_category_structure();
+
+		//-----------------------------------------------------------
 		$a = $this->gp->capture_wiki_subcategories("topics", 5);
-        $this->assertEquals(array(array("Topics"), array("Beer"), array("Bad_Cheese"), array("Cheese")), $a );
+        $this->assertEquals(array(array("Topics"), 
+									array("Beer"), 
+									array("Bad_Cheese"), 
+									array("Cheese")), $a );
 	}
+
+	/*
+    public function testWikiPagesIn() {
+        $this->makeWikiStructure();
+		$this->gp->add_arcs_from_category_structure();
+
+		//-----------------------------------------------------------
+		$a = $this->gp->capture_wiki_pages_in("topics", null, 5);
+        $this->assertEquals(array(array("Beer"), 
+									array("Lager"), 
+									array("Pils"), 
+									array("Bad_Cheese"), 
+									array("Toe_Cheese"), 
+									array("Cheese")), $a );
+
+		//-----------------------------------------------------------
+		$a = $this->gp->capture_wiki_pages_in("topics", 0, 5);
+        $this->assertEquals(array(array("Lager"), 
+									array("Pils"), 
+									array("Toe_Cheese")), $a );
+
+		//-----------------------------------------------------------
+		$a = $this->gp->capture_wiki_pages_in("portals", array(NS_MAIN, NS_PROJECT), 5);
+        $this->assertEquals(array(array("Main_Page"), 
+									array("Help_Out")), $a );
+	}
+	* */
 
 }
 

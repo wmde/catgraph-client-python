@@ -33,22 +33,14 @@ class gpMediaWikiGlue extends gpMySQLGlue {
 		$this->table_prefix = $prefix;
 	}
 	
-	public function gp_mediawiki_exec_handler( $glue, &$command, &$source, &$sink, &$result ) {
+	public function gp_mediawiki_exec_handler( $glue, &$command, &$source, &$sink, &$has_output, &$status ) {
 		if ( preg_match('/^wiki-(.*)$/', $command[0], $m) ) {
 			$name = str_replace('-', '_', $m[0]);
 			$args = array_slice( $command, 1 );
 			$args[] = $sink;
 			
-			call_user_func_array( array( $this, "{$name}_impl"), $args );
-			
-			if ( $table && $sink ) {
-				//TODO: if it's a gpMySQLSink, copy on the server side!
-				
-				$res = new gpMySQLSource( $table );
-				$this->copy( $res, $sink, ' > ' );
-			}
-			
-			if ( empty($result) ) $result = 'OK';
+			$has_output = true;
+			$status = call_user_func_array( array( $this, "{$name}_impl"), $args );
 			return false;
 		} 
 
@@ -76,29 +68,8 @@ class gpMediaWikiGlue extends gpMySQLGlue {
 		return $id;
 	}
 	
-	public function wiki_subcategories_impl( $cat, $depth, gpDataSink $sink ) {
-		$id = $this->get_page_id( NS_CATEGORY, $cat, $depth );
-		if ( !$id ) return 'NONE';
-		
-		$temp = $this->make_temp_sink( new gpMySQLTable('?', 'id') );
-		$status = $this->traverse_successors( $id, $temp );
-		
-		if ( $status == 'OK' ) {
-			$sql = "select page_title ";
-			$sql .= " from " . $this->get_table_name( "page" );
-			$sql .= " join " . $temp->getTable();
-			$sql .= " on id = page_id ";
-			$sql .= " where page_namespace = " . NS_CATEGORY; // should be redundant
-			$sql .= " order by page_id ";
-			
-			$this->select_into( $sql , $sink);
-		}
-		
-		return $status;
-	}
-
 	public function add_arcs_from_category_structure( ) {
-		$sql = "select C.page_id, P.page_id ";
+		$sql = "select C.page_id as parent, P.page_id as child";
 		$sql .= " from " . $this->get_table_name( "page" ) . " as P ";
 		$sql .= " join " . $this->get_table_name( "categorylinks" ) . " as X ";
 		$sql .= " on X.cl_from = P.page_id ";
@@ -112,6 +83,69 @@ class gpMediaWikiGlue extends gpMySQLGlue {
 		$this->add_arcs( $src );
 	}
 	 
+	public function wiki_subcategories_impl( $cat, $depth, gpDataSink $sink ) {
+		$id = $this->get_page_id( NS_CATEGORY, $cat );
+
+		if ( !$id ) return 'NONE';
+
+		$temp = $this->make_temp_sink( new gpMySQLTable('?', 'id') );
+		
+		$status = $this->traverse_successors( $id, $depth, $temp );
+		$temp->close();
+		
+		if ( $status == 'OK' ) {
+			$sql = "select page_title ";
+			$sql .= " from " . $this->get_table_name( "page" );
+			$sql .= " join " . $temp->getTable()->get_name();
+			$sql .= " on id = page_id ";
+			$sql .= " where page_namespace = " . NS_CATEGORY; // should be redundant
+			$sql .= " order by page_id ";
+			
+			$this->select_into( $sql , $sink);
+		}
+		
+		$temp->drop();
+		
+		return $status;
+	}
+
+	public function wiki_pages_in( $cat, $ns, $depth, gpDataSink $sink ) {
+		$id = $this->get_page_id( NS_CATEGORY, $cat );
+
+		if ( !$id ) return 'NONE';
+
+		$temp = $this->make_temp_sink( new gpMySQLTable('?', 'id') );
+		
+		$status = $this->traverse_successors( $id, $depth, $temp );
+		$temp->close();
+		
+		if ( $status == 'OK' ) {
+			//XXX: realy use a quadrupel join? or inject category names into temp table first?
+			$sql = "select P.page_namespace, P.page_title ";
+			$sql .= " from " . $this->get_table_name( "page" ) . " as P ";
+			$sql .= " join " . $this->get_table_name( "categorylinks" ) . " as X ";
+			$sql .= " on X.cl_from = P.page_id ";
+			$sql .= " join " . $this->get_table_name( "page" ) . " as C ";
+			$sql .= " on C.page_namespace = " . NS_CATEGORY . " and C.page_title = X.cl_to ";
+			$sql .= " join " . $temp->getTable()->get_name() . " as T ";
+			$sql .= " on T.id = C.page_id ";
+			
+			if ($ns !== null) {
+				if ( is_array($sql) ) $sql .= " where page_namespace in " . $this->as_list( $ns ); 
+				else $sql .= " where page_namespace = " . (int)$ns; 
+			}
+			
+			$sql .= " order by P.page_id ";
+			
+			$this->dump_query( $sql );
+			$this->select_into( $sql , $sink);
+		}
+		
+		$temp->drop();
+		
+		return $status;
+	}
+
 	/*
 	public function update_successors( int $page_id ) {
 		$sql = "";
