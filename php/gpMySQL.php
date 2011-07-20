@@ -10,9 +10,6 @@ class gpMySQLSource extends gpDataSource {
 		$this->glue = $glue;
 		$this->result = $result;
 		$this->table = $table;
-		
-		$this->field1 = $table->get_field1(true);
-		$this->field2 = $table->get_field2(true);
 	}
 
 	public function nextRow() {
@@ -21,10 +18,9 @@ class gpMySQLSource extends gpDataSource {
 		if ( !$raw ) return null;
 		
 		$row = array();
-		$row[] = $raw[ $this->field1 ];
 		
-		if ( $this->field2 ) {
-			$row[] = $raw[ $this->field2 ];
+		foreach ( $this->table->get_fields() as $f ) {
+			$row[] = @$raw[ $f ];
 		}
 				
 		return $row;
@@ -37,13 +33,21 @@ class gpMySQLSource extends gpDataSource {
 
 class gpMySQLTable {
 	private $name;
-	private $field1;
-	private $field2;
+	private $fields;
 	
-	function __construct($name, $field1, $field2 = null) {
+	function __construct($name) {
 		$this->name = $name;
-		$this->field1 = $field1;
-		$this->field2 = $field2;
+		
+		$args = func_get_args();
+		
+		if ( is_array($args[1]) ) $this->fields = $args[1];
+		else $this->fields = array_slice( $args, 1 );
+		
+		print "<<".var_export($this->fields, true).">>";
+		
+		if ( !isset($this->fields[0])) throw new gpUsageException("must provide at least one field");
+		if ( isset($this->fields[0]) && !$this->fields[0] ) throw new gpUsageException("field must not be empty");
+		if ( isset($this->fields[1]) && !$this->fields[1] ) throw new gpUsageException("field must not be empty");
 	}
 	
 	function get_name() {
@@ -54,24 +58,26 @@ class gpMySQLTable {
 		return preg_replace('/^.*\./', '', $n);
 	}
 	
+	function get_field( $n ) {
+		return @$this->fields[ $n-1 ];
+	}
+	
 	function get_field1( $basename_only = false ) {
-		if ( $basename_only ) return gpMySQLTable::strip_qualifier( $this->field1 );
-		else return $this->field1;
+		if ( $basename_only ) return gpMySQLTable::strip_qualifier( $this->get_field(1) );
+		else return $this->get_field(1);
 	}
 	
 	function get_field2( $basename_only = false ) {
-		if ( $basename_only ) return gpMySQLTable::strip_qualifier( $this->field2 );
-		else return $this->field2;
+		if ( $basename_only ) return gpMySQLTable::strip_qualifier( $this->get_field(2) );
+		else return $this->get_field(2);
 	}
 
 	function get_fields() {
-		if ( $this->field2 ) return array( $this->field1, $this->field2 );
-		else return array( $this->field1 );
+		return $this->fields;
 	}  
 
 	function get_field_list() {
-		if ( $this->field2 ) return "{$this->field1}, {$this->field2}";
-		else return $this->field1;
+		return implode(", ", $this->fields);
 	}  
 
 	function get_select() {
@@ -103,7 +109,7 @@ class gpMySQLSelect extends gpMySQLTable {
 				$ff[$i] = $f;
 			}
 			
-			parent::__construct($n, $ff[0], @$ff[1]);
+			parent::__construct($n, $ff);
 		} else {
 			throw new gpUsageException("can't parse statement: " . $select);
 		}
@@ -190,6 +196,7 @@ class gpMySQLBufferedInserter extends gpMySQLSimpleInserter {
 	
 	public function flush() {
 		if ( !empty( $this->buffer ) ) {
+			print "*** {$this->buffer} ***";
 			$this->glue->mysql_query( $this->buffer );
 			$this->buffer = "";
 		}
@@ -381,7 +388,7 @@ class gpMySQLGlue extends gpConnection {
 		return $sql;
 	}
 	
-	private function next_id() {
+	public function next_id() {
 		static $id = 1;
 		
 		$id++;
