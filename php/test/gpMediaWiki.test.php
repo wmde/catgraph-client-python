@@ -68,6 +68,7 @@ class gpMediaWikiTest extends gpSlaveTestBase {
         $this->gp->mysql_query( "INSERT INTO $p VALUES (120, ".NS_CATEGORY.", 'Maintenance')" );
         $this->gp->mysql_query( "INSERT INTO $p VALUES (1120, ".NS_CATEGORY.", 'Bad_Cheese')" );
         $this->gp->mysql_query( "INSERT INTO $p VALUES (1122, ".NS_MAIN.", 'Toe_Cheese')" );
+        $this->gp->mysql_query( "INSERT INTO $p VALUES (333, ".NS_TEMPLATE.", 'Yuck')" );
         
         $cl = $this->makeWikiTable( "categorylinks", "cl_from INT NOT NULL, cl_to VARCHAR(255) NOT NULL, PRIMARY KEY (cl_from, cl_to), INDEX cl_to (cl_to)" );
         $this->gp->mysql_query( "TRUNCATE $cl" );
@@ -85,6 +86,12 @@ class gpMediaWikiTest extends gpSlaveTestBase {
         $this->gp->mysql_query( "INSERT INTO $cl VALUES (1120, 'Cheese')" );
         $this->gp->mysql_query( "INSERT INTO $cl VALUES (1120, 'Cruft')" );
         $this->gp->mysql_query( "INSERT INTO $cl VALUES (1122, 'Bad_Cheese')" );
+
+        $tl = $this->makeWikiTable( "templatelinks", "tl_from INT NOT NULL, tl_namespace INT NOT NULL, tl_title VARCHAR(255) NOT NULL, PRIMARY KEY (tl_from, tl_namespace, tl_title), INDEX tl_to (tl_namespace, tl_title)" );
+        $this->gp->mysql_query( "TRUNCATE $tl" );
+        
+        $this->gp->mysql_query( "INSERT INTO $tl VALUES (1122, ".NS_TEMPLATE.", 'Yuck')" );
+        $this->gp->mysql_query( "INSERT INTO $tl VALUES (1111, ".NS_TEMPLATE.", 'Yuck')" );
 	}
         
         
@@ -166,6 +173,26 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 		$a = $set->capture();
         $this->assertEquals(array(array(20, NS_CATEGORY, "Portals")), $a );
 
+        //-----------------------------------------------------------
+        $set->dispose();
+	}
+	
+    public function testAddPagesTranscluding() {
+        $this->makeWikiStructure();
+		$this->gp->add_arcs_from_category_structure();
+
+		$set = new gpPageSet($this->gp);
+		$set->create_table();
+		
+		//-----------------------------------------------------------
+		$set->clear();
+		$ok = $set->add_pages_transclusing("yuck");
+		$this->assertTrue( $ok );
+		
+		$a = $set->capture();
+        $this->assertEquals(array(array(1111, NS_MAIN, "Lager"), 
+									array(1122, NS_MAIN, "Toe_Cheese")), $a );
+		
         //-----------------------------------------------------------
         $set->dispose();
 	}
@@ -253,6 +280,7 @@ class gpMediaWikiTest extends gpSlaveTestBase {
         
         //-----------------------------------------------------------
         $set->dispose();
+        $rset->dispose();
 	}
 
     public function testRetainPageSet() {
@@ -280,6 +308,39 @@ class gpMediaWikiTest extends gpSlaveTestBase {
         
         //-----------------------------------------------------------
         $set->dispose();
+        $rset->dispose();
+	}
+
+    public function testAddPageSet() {
+        $this->makeWikiStructure();
+		$this->gp->add_arcs_from_category_structure();
+
+		$beer = new gpPageSet($this->gp);
+		$beer->create_table();
+		
+		$cheese = new gpPageSet($this->gp);
+		$cheese->create_table();
+		
+		//-----------------------------------------------------------
+		$ok = $cheese->add_pages_in("Cheese", null, 5);
+		$ok = $beer->add_pages_in("Beer", null, 5);
+
+		$ok = $cheese->add_page_set( $beer );
+		$this->assertTrue( $ok );
+		
+		$a = $cheese->capture();
+		$expected = array(array(1110, NS_CATEGORY, "Beer"), 
+							array(1111, NS_MAIN, "Lager"), 
+							array(1112, NS_MAIN, "Pils"), 
+							array(1120, NS_CATEGORY, "Bad_Cheese"), 
+							array(1122, NS_MAIN, "Toe_Cheese"),
+							array(2110, NS_CATEGORY, "Cheese")       );
+		
+        $this->assertEquals($expected, $a );
+        
+        //-----------------------------------------------------------
+        $beer->dispose();
+        $cheese->dispose();
 	}
 
 }
