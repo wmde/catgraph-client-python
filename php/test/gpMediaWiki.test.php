@@ -140,22 +140,6 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 									array("Cheese")), $a );
 	}
 
-/*
-         $this->gp->mysql_query( "INSERT INTO $p VALUES (1, ".NS_MAIN.", 'Main_Page')" );
-        $this->gp->mysql_query( "INSERT INTO $p VALUES (2, ".NS_PROJECT.", 'Help_Out')" );
-        
-        $this->gp->mysql_query( "INSERT INTO $p VALUES (10, ".NS_CATEGORY.", 'ROOT')" );
-        $this->gp->mysql_query( "INSERT INTO $p VALUES (20, ".NS_CATEGORY.", 'Portals')" );
-        $this->gp->mysql_query( "INSERT INTO $p VALUES (110, ".NS_CATEGORY.", 'Topics')" );
-        $this->gp->mysql_query( "INSERT INTO $p VALUES (1110, ".NS_CATEGORY.", 'Beer')" );
-        $this->gp->mysql_query( "INSERT INTO $p VALUES (1111, ".NS_MAIN.", 'Lager')" );
-        $this->gp->mysql_query( "INSERT INTO $p VALUES (1112, ".NS_MAIN.", 'Pils')" );
-        $this->gp->mysql_query( "INSERT INTO $p VALUES (2110, ".NS_CATEGORY.", 'Cheese')" );
-        $this->gp->mysql_query( "INSERT INTO $p VALUES (120, ".NS_CATEGORY.", 'Maintenance')" );
-        $this->gp->mysql_query( "INSERT INTO $p VALUES (1120, ".NS_CATEGORY.", 'Bad_Cheese')" );
-        $this->gp->mysql_query( "INSERT INTO $p VALUES (1122, ".NS_MAIN.", 'Toe_Cheese')" );
-*/
-
     public function testAddSubcategories() {
         $this->makeWikiStructure();
 		$this->gp->add_arcs_from_category_structure();
@@ -233,6 +217,33 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 		$a = $set->capture( array(NS_MAIN, NS_PROJECT) );
         $this->assertEquals(array(array(1, NS_MAIN, "Main_Page"), 
 									array(2, NS_PROJECT, "Help_Out")), $a );
+	}
+
+    public function testSubtractPageSet() {
+        $this->makeWikiStructure();
+		$this->gp->add_arcs_from_category_structure();
+
+		$set = new gpPageSet($this->gp);
+		$set->create_table();
+		
+		$rset = new gpPageSet($this->gp);
+		$rset->create_table();
+		
+		//-----------------------------------------------------------
+		$ok = $set->add_pages_in("topics", null, 5);
+		$ok = $rset->add_pages_in("Maintenance", null, 5);
+
+		$ok = $set->subtract_page_set( $rset );
+		$this->assertTrue( $ok );
+		
+		$a = $set->capture();
+		$expected = array(array(110, NS_CATEGORY, "Topics"), 
+									array(1110, NS_CATEGORY, "Beer"), 
+									array(1111, NS_MAIN, "Lager"), 
+									array(1112, NS_MAIN, "Pils"), 
+									array(2110, NS_CATEGORY, "Cheese"));
+		
+        $this->assertEquals($expected, $a );
 	}
 
 }
