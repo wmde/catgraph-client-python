@@ -165,6 +165,9 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 		
 		$a = $set->capture();
         $this->assertEquals(array(array(20, NS_CATEGORY, "Portals")), $a );
+
+        //-----------------------------------------------------------
+        $set->dispose();
 	}
 	
     public function testAddPagesIn() {
@@ -217,6 +220,9 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 		$a = $set->capture( array(NS_MAIN, NS_PROJECT) );
         $this->assertEquals(array(array(1, NS_MAIN, "Main_Page"), 
 									array(2, NS_PROJECT, "Help_Out")), $a );
+
+        //-----------------------------------------------------------
+        $set->dispose();
 	}
 
     public function testSubtractPageSet() {
@@ -244,6 +250,36 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 									array(2110, NS_CATEGORY, "Cheese"));
 		
         $this->assertEquals($expected, $a );
+        
+        //-----------------------------------------------------------
+        $set->dispose();
+	}
+
+    public function testRetainPageSet() {
+        $this->makeWikiStructure();
+		$this->gp->add_arcs_from_category_structure();
+
+		$set = new gpPageSet($this->gp);
+		$set->create_table();
+		
+		$rset = new gpPageSet($this->gp);
+		$rset->create_table();
+		
+		//-----------------------------------------------------------
+		$ok = $set->add_pages_in("topics", null, 5);
+		$ok = $rset->add_pages_in("Maintenance", null, 5);
+
+		$ok = $set->retain_page_set( $rset );
+		$this->assertTrue( $ok );
+		
+		$a = $set->capture();
+		$expected = array(array(1120, NS_CATEGORY, "Bad_Cheese"), 
+							array(1122, NS_MAIN, "Toe_Cheese"));
+		
+        $this->assertEquals($expected, $a );
+        
+        //-----------------------------------------------------------
+        $set->dispose();
 	}
 
 }
