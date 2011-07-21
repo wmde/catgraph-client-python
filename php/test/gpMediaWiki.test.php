@@ -53,6 +53,8 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 
 	public function makeWikiStructure( ) {
         $p = $this->makeWikiTable( "page", "page_id INT NOT NULL, page_namespace INT NOT NULL, page_title VARCHAR(255) NOT NULL, PRIMARY KEY (page_id), UNIQUE KEY (page_namespace, page_title)" );
+        $this->gp->mysql_query( "TRUNCATE $p" );
+        
         $this->gp->mysql_query( "INSERT INTO $p VALUES (1, ".NS_MAIN.", 'Main_Page')" );
         $this->gp->mysql_query( "INSERT INTO $p VALUES (2, ".NS_PROJECT.", 'Help_Out')" );
         
@@ -68,8 +70,11 @@ class gpMediaWikiTest extends gpSlaveTestBase {
         $this->gp->mysql_query( "INSERT INTO $p VALUES (1122, ".NS_MAIN.", 'Toe_Cheese')" );
         
         $cl = $this->makeWikiTable( "categorylinks", "cl_from INT NOT NULL, cl_to VARCHAR(255) NOT NULL, PRIMARY KEY (cl_from, cl_to), INDEX cl_to (cl_to)" );
+        $this->gp->mysql_query( "TRUNCATE $cl" );
+        
         $this->gp->mysql_query( "INSERT INTO $cl VALUES (1, 'Portals')" );
         $this->gp->mysql_query( "INSERT INTO $cl VALUES (2, 'Portals')" );
+        $this->gp->mysql_query( "INSERT INTO $cl VALUES (20, 'ROOT')" );
         $this->gp->mysql_query( "INSERT INTO $cl VALUES (120, 'ROOT')" );
         $this->gp->mysql_query( "INSERT INTO $cl VALUES (110, 'ROOT')" );
         $this->gp->mysql_query( "INSERT INTO $cl VALUES (1110, 'Topics')" );
@@ -114,7 +119,7 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 
 		//-----------------------------------------------------------
 		$a = $this->gp->capture_list_successors( 10 );
-        $this->assertEquals(array(array(110), array(120)), $a );
+        $this->assertEquals(array(array(20), array(110), array(120)), $a );
 
 		$a = $this->gp->capture_list_predecessors( 1120 );
         $this->assertEquals(array(array(120), array(2110)), $a );
@@ -151,7 +156,7 @@ class gpMediaWikiTest extends gpSlaveTestBase {
         $this->gp->mysql_query( "INSERT INTO $p VALUES (1122, ".NS_MAIN.", 'Toe_Cheese')" );
 */
 
-    public function testWikiPagesIn() {
+    public function testAddSubcategories() {
         $this->makeWikiStructure();
 		$this->gp->add_arcs_from_category_structure();
 
@@ -159,23 +164,73 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 		$set->create_table();
 		
 		//-----------------------------------------------------------
-		$set->add_pages_in("topics", null, 5);
+		$set->clear();
+		$ok = $set->add_subcategories("topics", 5);
+		$this->assertTrue( $ok );
+		
 		$a = $set->capture();
-        $this->assertEquals(array(array(1110, NS_CATEGORY, "Beer"), 
+        $this->assertEquals(array(array(110, NS_CATEGORY, "Topics"), 
+									array(1110, NS_CATEGORY, "Beer"), 
+									array(1120, NS_CATEGORY, "Bad_Cheese"), 
+									array(2110, NS_CATEGORY, "Cheese")), $a );
+		
+		//-----------------------------------------------------------
+		$set->clear();
+		$ok = $set->add_subcategories("Portals", 5);
+		$this->assertTrue( $ok );
+		
+		$a = $set->capture();
+        $this->assertEquals(array(array(20, NS_CATEGORY, "Portals")), $a );
+	}
+	
+    public function testAddPagesIn() {
+        $this->makeWikiStructure();
+		$this->gp->add_arcs_from_category_structure();
+
+		$set = new gpPageSet($this->gp);
+		$set->create_table();
+		
+		//-----------------------------------------------------------
+		$set->clear();
+		$ok = $set->add_pages_in("topics", null, 5);
+		$this->assertTrue( $ok );
+		
+		$a = $set->capture();
+		$expected = array(array(110, NS_CATEGORY, "Topics"), 
+									array(1110, NS_CATEGORY, "Beer"), 
 									array(1111, NS_MAIN, "Lager"), 
 									array(1112, NS_MAIN, "Pils"), 
-									array(1120, NS_CATGORY, "Bad_Cheese"), 
+									array(1120, NS_CATEGORY, "Bad_Cheese"), 
 									array(1122, NS_MAIN, "Toe_Cheese"), 
-									array(2110, NS_CATEGORY, "Cheese")), $a );
+									array(2110, NS_CATEGORY, "Cheese"));
+		
+        $this->assertEquals($expected, $a );
 
 		//-----------------------------------------------------------
-		$a = $this->gp->add_pages_in("topics", 0, 5);
+		$set->clear();
+		$ok = $set->add_pages_in("topics", null, 5);
+		$this->assertTrue( $ok );
+		
+		$a = $set->capture( NS_MAIN );
         $this->assertEquals(array(array(1111, NS_MAIN, "Lager"), 
 									array(1112, NS_MAIN, "Pils"), 
 									array(1122, NS_MAIN, "Toe_Cheese")), $a );
 
 		//-----------------------------------------------------------
-		$a = $this->gp->add_pages_in("portals", array(NS_MAIN, NS_PROJECT), 5);
+		$set->clear();
+		$ok = $set->add_pages_in("Portals", 0, 5);
+		$this->assertTrue( $ok );
+		
+		$a = $set->capture();
+        $this->assertEquals(array(array(1, NS_MAIN, "Main_Page"),
+									array(20, NS_CATEGORY, "Portals")), $a );
+
+		//-----------------------------------------------------------
+		$set->clear();
+		$ok = $set->add_pages_in("portals", array(NS_MAIN, NS_PROJECT), 5);
+		$this->assertTrue( $ok );
+		
+		$a = $set->capture( array(NS_MAIN, NS_PROJECT) );
         $this->assertEquals(array(array(1, NS_MAIN, "Main_Page"), 
 									array(2, NS_PROJECT, "Help_Out")), $a );
 	}
