@@ -259,6 +259,34 @@ class gpMediaWikiTest extends gpSlaveTestBase {
         $set->dispose();
 	}
 
+    public function testBufferedAddPagesIn() {
+        $this->makeWikiStructure();
+		$this->gp->add_arcs_from_category_structure();
+
+		$set = new gpPageSet($this->gp);
+		$set->set_expect_big(false);
+		$set->create_table();
+		
+		//-----------------------------------------------------------
+		$set->clear();
+		$ok = $set->add_pages_in("topics", null, 5);
+		$this->assertTrue( $ok );
+		
+		$a = $set->capture();
+		$expected = array(array(110, NS_CATEGORY, "Topics"), 
+									array(1110, NS_CATEGORY, "Beer"), 
+									array(1111, NS_MAIN, "Lager"), 
+									array(1112, NS_MAIN, "Pils"), 
+									array(1120, NS_CATEGORY, "Bad_Cheese"), 
+									array(1122, NS_MAIN, "Toe_Cheese"), 
+									array(2110, NS_CATEGORY, "Cheese"));
+		
+        $this->assertEquals($expected, $a );
+
+        //-----------------------------------------------------------
+        $set->dispose();
+	}
+
     public function testSubtractPageSet() {
         $this->makeWikiStructure();
 		$this->gp->add_arcs_from_category_structure();

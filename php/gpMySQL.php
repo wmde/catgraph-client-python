@@ -305,13 +305,18 @@ class gpMySQLTempSink extends gpMySQLSink {
 
 
 class gpMySQLGlue extends gpConnection {
-	var $connection;
+	var $connection = null;
+	var $unbuffered = false;
 	
 	function __construct( $transport ) {
 		parent::__construct($transport);
 
 		$h = array( $this, 'gp_mysql_call_handler' );
 		$this->addCallHandler( $h );
+	}
+	
+	function set_unbuffered( $unbuffered ) {
+		$this->unbuffered = $unbuffered;
 	}
 	
 	function mysql_connect( $server = null, $username = null, $password = null, $new_link = false, $client_flags = 0 ) {
@@ -389,6 +394,10 @@ class gpMySQLGlue extends gpConnection {
 			$args[] = $this->connection;
 		}
 		
+		if ( $this->unbuffered && $name == 'mysql_query' ) {
+			$name = 'mysql_unbuffered_query';
+		}
+		
 		$res = call_user_func_array( $name, $args );
 
 		if ( !$res ) {
@@ -397,7 +406,7 @@ class gpMySQLGlue extends gpConnection {
 			if ( $errno ) {
 				$msg = "MySQL Error $errno: " . mysql_error();
 				
-				if ( $name == 'mysql_query' ) {
+				if ( $name == 'mysql_query' || $name == 'mysql_unbuffered_query' ) {
 					$sql = str_replace('/\s+/', ' ', $args[0]);
 					if ( strlen($sql) > 255 ) $sql = substr($sql, 0, 252) . '...';
 					

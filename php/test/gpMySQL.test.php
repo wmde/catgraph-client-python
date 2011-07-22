@@ -83,6 +83,22 @@ class gpMySQLTest extends gpSlaveTestBase {
         $this->assertEquals(array(array(3, 8), array(7, 9), array(11, 11)), $data );
     }
 
+    public function testUnbufferedSelectInto() {
+        $this->makeTable( "test", "a INT NOT NULL, b INT NOT NULL" );
+        $this->gp->set_unbuffered(true);
+        $this->gp->mysql_query( "INSERT INTO test VALUES (3, 8)" );
+        $this->gp->mysql_query( "INSERT INTO test VALUES (7, 9)" );
+        $this->gp->mysql_query( "INSERT INTO test VALUES (11, 11)" );
+        
+		//-----------------------------------------------------------
+		$sink = new gpArraySink();
+        $this->gp->select_into( "select a, b from test order by a, b", $sink );
+
+		$data = $sink->getData();
+		
+        $this->assertEquals(array(array(3, 8), array(7, 9), array(11, 11)), $data );
+    }
+
     public function testTempSink() {
 		$snk = $this->gp->make_temp_sink( new gpMySQLTable("?", "a", "b") );
 		$table = $snk->getTable();

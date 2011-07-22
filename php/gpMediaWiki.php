@@ -185,6 +185,8 @@ class gpPageSet {
 	var $title_field;
 	var $namespace_field;
 	
+	var $big = true;
+	
 	public function __construct( $glue, $table = "?", $id_field = "page_id", $namespace_field = "page_namespace", $title_field = "page_title" ) {
 		$this->glue = $glue;
 		$this->table = $table;
@@ -202,6 +204,10 @@ class gpPageSet {
 		
 		$this->table_id_obj = new gpMySQLTable( $this->table, $this->id_field );
 		$this->table_id_obj->add_key_definition( "PRIMARY KEY (" . $this->id_field . ")" );
+	}
+	
+	public function set_expect_big( $big ) {
+		$this->big = $big;
 	}
 	
 	public function get_table() {
@@ -222,7 +228,7 @@ class gpPageSet {
 		$sql .= $this->table_obj->get_field_definitions();
 		$sql .= ")";
 		
-		$this->glue->mysql_query($sql);
+		$this->query($sql);
 		
 		$this->table = $table;
 		$this->table_obj->set_name( $this->table );
@@ -230,6 +236,11 @@ class gpPageSet {
 
 		return $table;  
 		
+	}
+	
+	protected function query( $sql ) {
+		if ( $this->big ) return $this->glue->mysql_unbuffered_query($sql);
+		else return $this->glue->mysql_query($sql);
 	}
 	
 	public function add_from_select( $select ) {
@@ -240,14 +251,14 @@ class gpPageSet {
 		$sql .= $this->title_field . " ) ";
 		$sql .= $select;
 		
-		return $this->glue->mysql_query( $sql );
+		return $this->query( $sql );
 	} 
 	
 	public function delete_where( $where ) {
 		$sql= "DELETE FROM " . $this->table ." ";
 		$sql .= $where;
 		
-		return $this->glue->mysql_query( $sql );
+		return $this->query( $sql );
 	} 
 	
 	public function delete_using( $using, $tableAlias = "T" ) {
@@ -255,7 +266,7 @@ class gpPageSet {
 		$sql .= "USING " . $this->table ." AS $tableAlias ";
 		$sql .= $using;
 		
-		return $this->glue->mysql_query( $sql );
+		return $this->query( $sql );
 	} 
 	
 	public function resolve_ids( ) {
@@ -270,7 +281,7 @@ class gpPageSet {
 		$sql .= " FROM " .  $this->table;
 		$sql .= " WHERE page_title IS NULL";
 		
-		$this->glue->mysql_query( $sql );  //copy page ids with no page title into temp table
+		$this->query( $sql );  //copy page ids with no page title into temp table
 		
 		$sql = "SELECT P.page_id, P.page_namespace, P.page_title ";
 		$sql .= " FROM " . $this->glue->wiki_table("page") . " AS P ";
@@ -308,7 +319,7 @@ class gpPageSet {
 			$t = new gpMySQLSelect($select);
 		}
 		
-		$src = $this->glue->make_source( $t );
+		$src = $this->glue->make_source( $t, $this->big );
 		return $src;
 	}
 
@@ -388,7 +399,7 @@ class gpPageSet {
 		$sql .= " JOIN " . $table->get_name() . " AS R ";
 		$sql .= " ON T." . $this->id_field . " = R." . $id_field;
 		
-		$this->glue->mysql_query($sql);
+		$this->query($sql);
 		return true;
 	}
 
@@ -401,7 +412,7 @@ class gpPageSet {
 		$sql .= " ON T." . $this->id_field . " = R." . $id_field;
 		$sql .= " WHERE R.$id_field IS NULL";
 		
-		$this->glue->mysql_query($sql);
+		$this->query($sql);
 		return true;
 	}
 
@@ -410,7 +421,7 @@ class gpPageSet {
 		$sql .= " WHERE " . $this->namespace_field . " = " . (int)$ns;
 		$sql .= " AND " . $this->title_field . " = " . $this->glue->quote_string($title);
 		
-		$this->glue->mysql_query($sql);
+		$this->query($sql);
 		return true;
 	}
 	
@@ -418,7 +429,7 @@ class gpPageSet {
 		$sql = "DELETE FROM " . $this->table;
 		$sql .= " WHERE " . $this->id_field . " = " . (int)$id;
 		
-		$this->glue->mysql_query($sql);
+		$this->query($sql);
 		return true;
 	}
 
@@ -429,7 +440,7 @@ class gpPageSet {
 		if ( is_array($ns) ) $sql .=  ( $inverse ? " not in " : " in " ) . $this->glue->as_list( $ns ); 
 		else $sql .= ( $inverse ? " != " : " = " ) . (int)$ns; 
 			
-		$this->glue->mysql_query($sql);
+		$this->query($sql);
 		return true;
 	}
 
@@ -446,7 +457,7 @@ class gpPageSet {
 		$sql .= " VALUES ";
 		$sql .= $this->glue->as_list($values);
 		
-		$this->glue->mysql_query( $sql );
+		$this->query( $sql );
 		return true;
 	}
 
@@ -458,7 +469,7 @@ class gpPageSet {
 		$sql .= " VALUES ";
 		$sql .= $this->glue->as_list($values);
 		
-		$this->glue->mysql_query( $sql );
+		$this->query( $sql );
 		return true;
 	}
 	
@@ -475,7 +486,7 @@ class gpPageSet {
 		$sql .= " from " . $this->table . " as T ";
 		$sql .= " where page_namespace =  ".NS_CATEGORY;
 	
-		$this->glue->mysql_query( $sql );
+		$this->query( $sql );
 		#$this->glue->dump_query("select * from ".$tmp->get_name());
 		
 		// ----------------------------------------------------------
@@ -548,13 +559,13 @@ class gpPageSet {
 
 	public function clear() {
 		$sql = "TRUNCATE " . $this->table;
-		$this->glue->mysql_query($sql);
+		$this->query($sql);
 		return true;
 	}
 
 	public function dispose() {
 		$sql = "DROP TEMPORARY TABLE " . $this->table;
-		$this->glue->mysql_query($sql);
+		$this->query($sql);
 		return true;
 	}
 }
