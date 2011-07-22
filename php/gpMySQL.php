@@ -35,6 +35,9 @@ class gpMySQLTable {
 	private $name;
 	private $fields;
 	
+	private $field_definitions = array();
+	private $key_definitions = array();
+	
 	function __construct($name) {
 		$this->name = $name;
 		
@@ -43,11 +46,35 @@ class gpMySQLTable {
 		if ( is_array($args[1]) ) $this->fields = $args[1];
 		else $this->fields = array_slice( $args, 1 );
 		
-		print "<<".var_export($this->fields, true).">>";
+		foreach ( $this->fields as $f ) {
+			if ( !$f ) throw new gpUsageException( "empty field name!" );
+		}
 		
-		if ( !isset($this->fields[0])) throw new gpUsageException("must provide at least one field");
-		if ( isset($this->fields[0]) && !$this->fields[0] ) throw new gpUsageException("field must not be empty");
-		if ( isset($this->fields[1]) && !$this->fields[1] ) throw new gpUsageException("field must not be empty");
+		/*
+		for ( $i = count($this->fields) -1; $i >= 0; $i-- ) {
+			if ( $this->fields[$i] ) break;
+		}
+		
+		if ( $i+1 < count($this->fields) ) {
+			$this->fields = array_slice($this->fields, 0, $i+1);
+		}
+		* */
+	}
+	
+	function set_name( $name ) {
+		$this->name = $name;
+	}
+	
+	function set_fields( $field ) {
+		$this->fields = $fields;
+	}
+	
+	function set_field_definition( $field, $def ) {
+		$this->field_definitions[$field] = $def;
+	}
+	
+	function add_key_definition( $keyDef ) {
+		$this->key_definitions[] = $keyDef;
 	}
 	
 	function get_name() {
@@ -79,6 +106,25 @@ class gpMySQLTable {
 	function get_field_list() {
 		return implode(", ", $this->fields);
 	}  
+	
+	function get_field_definitions() {
+		$s = "";
+		
+		foreach ( $this->fields as $f ) {
+			if ( !$f ) continue; //XXX: should not happen!
+			if ( !empty($s) ) $s.= ", ";
+			
+			if ( !empty($this->field_definitions[$f]) ) $s .= $f . " " . $this->field_definitions[$f];
+			else $s .= $f . " INT NOT NULL";
+		}
+		
+		foreach ( $this->key_definitions as $k ) {
+			if ( !empty($s) ) $s.= ", ";
+			$s .= $k;
+		}
+
+		return $s;
+	}
 
 	function get_select() {
 		return "SELECT " . $this->get_field_list() . " FROM " . $this->get_name();
@@ -92,6 +138,7 @@ class gpMySQLTable {
 	function get_order_by() {
 		return "ORDER BY " . $this->get_field_list();
 	}  
+	
 }
 
 class gpMySQLSelect extends gpMySQLTable {
@@ -196,7 +243,7 @@ class gpMySQLBufferedInserter extends gpMySQLSimpleInserter {
 	
 	public function flush() {
 		if ( !empty( $this->buffer ) ) {
-			print "*** {$this->buffer} ***";
+			#print "*** {$this->buffer} ***";
 			$this->glue->mysql_query( $this->buffer );
 			$this->buffer = "";
 		}
@@ -304,7 +351,7 @@ class gpMySQLGlue extends gpConnection {
 				else $t = preg_split( '/\s+|\s*,\s*/', $t ); 
 			}
 			
-			if ( is_array($t) ) $t = new gpMySQLTable( $t[0], $t[1], @$t[2] ); 
+			if ( is_array($t) ) $t = new gpMySQLTable( $t[0], array_slice($t, 1) ); 
 			if ( ! ($t instanceof gpMySQLTable) ) throw new gpUsageException("expected last argument to be a table spec; found " . get_class($t));
 			
 			if ( $action == 'into' ) {
@@ -348,7 +395,16 @@ class gpMySQLGlue extends gpConnection {
 			$errno = mysql_errno( $this->connection );
 			
 			if ( $errno ) {
-				throw new gpClientException( "MySQL Error $errno: " . mysql_error() );
+				$msg = "MySQL Error $errno: " . mysql_error();
+				
+				if ( $name == 'mysql_query' ) {
+					$sql = str_replace('/\s+/', ' ', $args[0]);
+					if ( strlen($sql) > 255 ) $sql = substr($sql, 0, 252) . '...';
+					
+					$msg = $msg.= "\nQuery was: $sql";
+				}
+				
+				throw new gpClientException( $msg );
 			}
 		}
 
@@ -379,7 +435,7 @@ class gpMySQLGlue extends gpConnection {
 			if ( is_null($v) ) $sql.= "NULL";
 			else if ( is_int($v) ) $sql.= $v;
 			else if ( is_float($v) ) $sql.= $v;
-			else if ( is_str($v) ) $sql.= $this->glue->quote_string($v); //TODO: charset...
+			else if ( is_string($v) ) $sql.= $this->quote_string($v); //TODO: charset...
 			else throw new gpUsageException("bad value type: " . gettype($v));
 		}
 		
@@ -395,6 +451,11 @@ class gpMySQLGlue extends gpConnection {
 		return $id;
 	} 
 	
+	public function drop_temp_table( $spec ) {
+		$sql = "DROP TEMPORARY TABLE " . $spec->get_name();
+		$this->mysql_query($sql);
+	}
+	
 	public function make_temp_table( $spec ) {
 		$table = $spec->get_name();
 		
@@ -404,13 +465,12 @@ class gpMySQLGlue extends gpConnection {
 		
 		$sql = "CREATE TEMPORARY TABLE " . $table; 
 		$sql .= "(";
-		$sql .= $spec->get_field1() . " INT NOT NULL";
-		if ($spec->get_field2()) $sql .= ", " . $spec->get_field2() . " INT NOT NULL";
+		$sql .= $spec->get_field_definitions();
 		$sql .= ")";
 		
 		$this->mysql_query($sql);
 		
-		return new gpMySQLTable($table, $spec->get_field1(), $spec->get_field2());  
+		return new gpMySQLTable($table, $spec->get_fields());  
 	}
 
 	public function mysql_query_value( $sql ) {
@@ -545,6 +605,8 @@ class gpMySQLGlue extends gpConnection {
 				foreach ( $keys as $k ) {
 					print "$k\t";
 				}
+				
+				print "\n";
 			}
 			
 			foreach ( $row as $k => $v ) {

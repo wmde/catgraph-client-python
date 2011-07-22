@@ -137,7 +137,7 @@ class gpMediaWikiGlue extends gpMySQLGlue {
 			
 			$sql .= " order by P.page_id ";
 			
-			$this->dump_query( $sql );
+			#$this->dump_query( $sql );
 			$this->select_into( $sql , $sink);
 		}
 		
@@ -180,7 +180,14 @@ class gpPageSet {
 		$this->title_field = $title_field;
 		
 		$this->table_obj = new gpMySQLTable( $this->table, $this->id_field, $this->namespace_field, $this->title_field );
+		$this->table_obj->set_field_definition( $this->id_field, "INT NOT NULL");
+		$this->table_obj->set_field_definition( $this->namespace_field, "INT DEFAULT NULL");
+		$this->table_obj->set_field_definition( $this->title_field, "VARCHAR(255) BINARY DEFAULT NULL");
+		$this->table_obj->add_key_definition( "PRIMARY KEY (" . $this->id_field . ")" );
+		$this->table_obj->add_key_definition( "UNIQUE KEY (" . $this->namespace_field . ", " . $this->title_field . ")" );
+		
 		$this->table_id_obj = new gpMySQLTable( $this->table, $this->id_field );
+		$this->table_id_obj->add_key_definition( "PRIMARY KEY (" . $this->id_field . ")" );
 	}
 	
 	public function get_table() {
@@ -198,19 +205,14 @@ class gpPageSet {
 		
 		$sql = "CREATE $t TABLE " . $table; 
 		$sql .= "(";
-		$sql .= $this->id_field . " INT NOT NULL,";
-		$sql .= $this->namespace_field . " INT DEFAULT NULL,";
-		$sql .= $this->title_field . " VARCHAR(255) BINARY  DEFAULT NULL,";
-		$sql .= " PRIMARY KEY (" . $this->id_field . "),";
-		$sql .= " UNIQUE KEY (" . $this->namespace_field . ", " . $this->title_field . ")";
+		$sql .= $this->table_obj->get_field_definitions();
 		$sql .= ")";
 		
-		print "*** $sql ***";
 		$this->glue->mysql_query($sql);
 		
 		$this->table = $table;
-		$this->table_obj = new gpMySQLTable( $this->table, $this->id_field, $this->namespace_field, $this->title_field );
-		$this->table_id_obj = new gpMySQLTable( $this->table, $this->id_field );
+		$this->table_obj->set_name( $this->table );
+		$this->table_id_obj->set_name( $this->table );
 
 		return $table;  
 		
@@ -228,12 +230,27 @@ class gpPageSet {
 	} 
 	
 	public function resolve_ids( ) {
+		//NOTE: MySQL can't perform self-joins on temp tables. so we need to copy the ids to another temp table first.
+		$t = new gpMySQLTable("?", "page_id");
+		$t->add_key_definition("PRIMARY KEY (page_id)");
+		
+		$tmp = $this->glue->make_temp_table( $t );
+		
+		$sql = $tmp->get_insert(true);
+		$sql .= "SELECT " . $this->id_field;
+		$sql .= " FROM " .  $this->table;
+		$sql .= " WHERE page_title IS NULL";
+		
+		$this->glue->mysql_query( $sql );  //copy page ids with no page title into temp table
+		
 		$sql = "SELECT P.page_id, P.page_namespace, P.page_title ";
 		$sql .= " FROM " . $this->glue->wiki_table("page") . " AS P ";
-		$sql .= " JOIN " . $this->table . " AS T ON T." . $this->id_field . " = P.page_id";
-		$sql .= " WHERE T.page_title IS NULL";
+		$sql .= " JOIN " . $tmp->get_name() . " AS T ON T.page_id = P.page_id";
 		
 		$this->add_from_select( $sql );
+		
+		$this->glue->drop_temp_table( $tmp );  
+		return true;
 	}
 
 	public function make_sink() {
@@ -246,44 +263,136 @@ class gpPageSet {
 		return $sink;
 	}
 
-	public function make_source() {
-		$src = $this->glue->make_source( $this->table_obj );
+	public function make_id_source( $ns = null ) {
+		return $this->make_source( $ns, true );
+	}
+
+	public function make_source( $ns = null, $ids_only = false ) {
+		$t = $ids_only ? $this->table_id_obj : $this->table_obj;
+		
+		if ( $ns !== null ) {
+			$select = $t->get_select();
+			
+			if ( is_array($ns) ) $select .= " where page_namespace in " . $this->glue->as_list( $ns ); 
+			else $select .= " where page_namespace = " . (int)$ns; 
+			
+			$t = new gpMySQLSelect($select);
+		}
+		
+		$src = $this->glue->make_source( $t );
 		return $src;
 	}
 
-	public function capture( &$data = null ) {
-		$sink = gpArraySink( $data );
-		$this->capture_into( $sink );
+	public function capture( $ns = null, &$data = null ) {
+		$sink = new gpArraySink( $data );
+		$this->copy_to_sink( $ns, $sink );
 		return $sink->getData();
 	}
 
-	public function capture_ids( &$data = null ) {
-		$sink = gpArraySink( $data );
-		$this->capture_into( $sink );
+	public function capture_ids( $ns = null, &$data = null ) {
+		$sink = new gpArraySink( $data );
+		$this->copy_ids_to_sink( $ns, $sink );
 		return $sink->getData();
 	}
 
-	public function capture_into( $sink ) {
-		$src = $this->make_source();
-		$this->glue->copy($src, $sink, "~");
+	public function copy_to_sink( $ns, $sink ) {
+		$src = $this->make_source($ns);
+		return $this->glue->copy($src, $sink, "~");
 	}
 
-	public function capture_ids_into( $sink ) {
-		$src = $this->make_id_source();
-		$this->glue->copy($src, $sink, "~");
+	public function copy_ids_to_sink( $ns, $sink ) {
+		$src = $this->make_id_source($ns);
+		return $this->glue->copy($src, $sink, "~");
 	}
 
-	public function add_from_source( $src ) {
+	public function add_source( $src ) {
 		$sink = $this->make_sink();
 		return $this->glue->copy( $src, $sink, "+" );
 	}
 
-	public function add_from_page_set( $set ) {
-		$src = $set->make_source();
-		$sink = $this->make_sink();
-		return $this->glue->copy( $src, $sink, "+" );
+	public function add_page_set( $set ) {
+		$select = $set->get_table()->get_select();
+		return $this->add_from_select( $select );
 	}
 
+	public function subtract_page_set( $set ) {
+		$t = $set->get_table();
+		return $this->subtract_table( $t );
+	}
+
+	public function subtract_source( $src ) { //XXX: must be a 1 column id source...
+		$t = new gpMySQLTable("?", "page_id");
+		$sink = $this->glue->make_temp_sink( $t );
+		$t = $sink->getTable();
+		
+		$this->glue->copy( $src, $sink, "+" );
+		
+		$ok = $this->subtract_table($t, "page_id");
+		
+		$this->glue->drop_temp_table($t);
+		return $ok;
+	}
+
+	public function retain_page_set( $set ) {
+		$t = $set->get_table();
+		return $this->retain_table( $t );
+	}
+
+	public function retain_source( $src ) { //XXX: must be a 1 column id source...
+		$t = new gpMySQLTable("?", "page_id");
+		$sink = $this->glue->make_temp_sink( $t );
+		$t = $sink->getTable();
+		
+		$this->glue->copy( $src, $sink, "+" );
+		
+		$ok = $this->retain_table($t, "page_id");
+		
+		$this->glue->drop_temp_table($t);
+		return $ok;
+	}
+
+	public function subtract_table( $table, $id_field = null ) {
+		if ( !$id_field ) $id_field = $table->get_field1();
+		
+		$sql = "DELETE FROM T ";
+		$sql .= " USING " . $this->table . " AS T ";
+		$sql .= " JOIN " . $table->get_name() . " AS R ";
+		$sql .= " ON T." . $this->id_field . " = R." . $id_field;
+		
+		$this->glue->mysql_query($sql);
+		return true;
+	}
+
+	public function retain_table( $table, $id_field = null ) {
+		if ( !$id_field ) $id_field = $table->get_field1();
+		
+		$sql = "DELETE FROM T ";
+		$sql .= " USING " . $this->table . " AS T ";
+		$sql .= " LEFT JOIN " . $table->get_name() . " AS R ";
+		$sql .= " ON T." . $this->id_field . " = R." . $id_field;
+		$sql .= " WHERE R.$id_field IS NULL";
+		
+		$this->glue->mysql_query($sql);
+		return true;
+	}
+
+	public function remove_page( $ns, $title ) {
+		$sql = "DELETE FROM " . $this->table;
+		$sql .= " WHERE " . $this->namespace_field . " = " . (int)$ns;
+		$sql .= " AND " . $this->title_field . " = " . $this->glue->quote_string($title);
+		
+		$this->glue->mysql_query($sql);
+		return true;
+	}
+	
+	public function remove_page_id( $id ) {
+		$sql = "DELETE FROM " . $this->table;
+		$sql .= " WHERE " . $this->id_field . " = " . (int)$id;
+		
+		$this->glue->mysql_query($sql);
+		return true;
+	}
+	
 	public function add_page( $id, $ns, $title ) {
 		if ( !$id ) $id = $this->glue->get_page_id( NS_CATEGORY, $cat );
 		
@@ -294,6 +403,7 @@ class gpPageSet {
 		$sql .= $this->glue->as_list($values);
 		
 		$this->glue->mysql_query( $sql );
+		return true;
 	}
 
 	public function add_page_id( $id ) {
@@ -305,35 +415,93 @@ class gpPageSet {
 		$sql .= $this->glue->as_list($values);
 		
 		$this->glue->mysql_query( $sql );
+		return true;
 	}
 	
 	public function expand_categories( $ns ) {
-		$sql = "select P.page_namespace, P.page_title ";
-		$sql .= " from " . $this->wiki_table( "page" ) . " as P ";
-		$sql .= " join " . $this->wiki_table( "categorylinks" ) . " as X ";
+		//NOTE: MySQL can't perform self-joins on temp tables. so we need to copy the category names to another temp table first.
+		$t = new gpMySQLTable("?", "cat_title");
+		$t->set_field_definition("cat_title", "VARCHAR(255) BINARY NOT NULL");
+		$t->add_key_definition("PRIMARY KEY (cat_title)");
+		
+		$tmp = $this->glue->make_temp_table( $t );
+		
+		$sql = $tmp->get_insert(true);
+		$sql .= " select page_title ";
+		$sql .= " from " . $this->table . " as T ";
+		$sql .= " where page_namespace =  ".NS_CATEGORY;
+	
+		$this->glue->mysql_query( $sql );
+		#$this->glue->dump_query("select * from ".$tmp->get_name());
+		
+		// ----------------------------------------------------------
+		$sql = "select P.page_id, P.page_namespace, P.page_title ";
+		$sql .= " from " . $this->glue->wiki_table( "page" ) . " as P ";
+		$sql .= " join " . $this->glue->wiki_table( "categorylinks" ) . " as X ";
 		$sql .= " on X.cl_from = P.page_id ";
-		$sql .= " join " . $this->table . " as T ";
-		$sql .= " on T.page_namespace =  ".NS_CATEGORY." and T.page_title = X.cl_to ";
+		$sql .= " join " . $tmp->get_name() . " as T ";
+		$sql .= " on T.cat_title = X.cl_to ";
 		
 		if ($ns !== null) {
-			if ( is_array($sql) ) $sql .= " where page_namespace in " . $this->as_list( $ns ); 
-			else $sql .= " where page_namespace = " . (int)$ns; 
+			if ( is_array($ns) ) $sql .= " where P.page_namespace in " . $this->glue->as_list( $ns ); 
+			else $sql .= " where P.page_namespace = " . (int)$ns; 
 		}
 	
+		#$this->glue->dump_query($sql);
 		$this->add_from_select( $sql );
+		
+		#$this->glue->dump_query("select * from ".$this->table);
+		$this->glue->drop_temp_table( $tmp );
+		return true;
 	}
 	
-	public function add_pages_in( $cat, $ns, $depth ) {
+	public function add_subcategories( $cat, $depth ) {
+		$this->add_subcategory_ids($cat, $depth);
+		$this->resolve_ids();
+		return true;
+	}
+	
+	protected function add_subcategory_ids( $cat, $depth ) {
 		$id = $this->glue->get_page_id( NS_CATEGORY, $cat );
 		if ( !$id ) return false;
 
 		$sink = $this->make_id_sink();
 		$status = $this->glue->traverse_successors( $id, $depth, $sink );
 		$sink->close();
+		return true;
+	}
+	
+	public function add_pages_in( $cat, $ns, $depth ) {
+		if ( !$this->add_subcategories($cat, $depth) ) return false;
 
-		$this->resolve_ids();
 		$this->expand_categories($ns);
+		return true;
 	}
 
+	public function add_pages_transclusing( $tag, $ns = null ) {
+		if ( $ns === null ) $ns = NS_TEMPLATE;
+		$tag = $this->glue->get_db_key( $tag );
+
+		$sql = " SELECT page_id, page_namespace, page_title ";
+		$sql .= " FROM " . $this->glue->wiki_table( "page" );
+		$sql .= " JOIN " . $this->glue->wiki_table( "templatelinks" );
+		$sql .= " ON tl_from = page_id ";
+		$sql .= " WHERE tl_namespace = " . (int)$ns;
+		$sql .= " AND tl_title = " . $this->glue->quote_string($tag);
+		
+		return $this->add_from_select($sql);
+	}
+
+	public function clear() {
+		$sql = "TRUNCATE " . $this->table;
+		$this->glue->mysql_query($sql);
+		return true;
+	}
+
+	public function dispose() {
+		$sql = "DROP TEMPORARY TABLE " . $this->table;
+		$this->glue->mysql_query($sql);
+		return true;
+	}
 }
 
