@@ -145,6 +145,12 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 									array("Beer"), 
 									array("Bad_Cheese"), 
 									array("Cheese")), $a );
+
+		//-----------------------------------------------------------
+		$a = $this->gp->get_subcategories("topics", 5, "maintenance");
+        $this->assertEquals(array(array("Topics"), 
+									array("Beer"), 
+									array("Cheese")), $a );
 	}
 
 	//////////////////////////////////////////////////////////////////////////////////////

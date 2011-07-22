@@ -585,6 +585,8 @@ class gpConnection {
 		
 		try {
 			$do_exec = true;
+			$has_output = null;
+			
 			foreach ( $this->exec_handlers as $handler ) {
 				$continue = call_user_func_array( $handler, array( $this, &$command, &$source, &$sink, &$has_output, &$status) );
 				
@@ -595,14 +597,14 @@ class gpConnection {
 			}
 		
 			if ( $do_exec ) {
-				if ( method_exists( $this, $command[0] ) ) {
-					$cmd = $command[0];
+				$func = str_replace('-', '_', $command[0]. '_impl');
+				if ( method_exists( $this, $func ) ) {
 					$args = array_slice( $command, 1 );
 					$args[] = $source;
 					$args[] = $sink;
-					$args[] &= $has_output;
+					$args[] = &$has_output;
 					
-					$status = call_user_func_array( array($this, $cmd), $args );
+					$status = call_user_func_array( array($this, $func), $args );
 				} else {
 					$status = $this->exec( $command, $source, $sink, $has_output );
 				}
@@ -759,6 +761,12 @@ class gpConnection {
 		
 		return $this->status;
 	}
+
+	public function traverse_successors_without_impl( $id, $depth, $without, $without_depth, $source, $sink, &$has_output = null ) {
+		if ( !$without_depth ) $without_depth = $depth;
+		return $this->exec( "traverse-successors $id $depth &&! traverse-successors $without $without_depth", $source, $sink, $has_output );
+	}
+	
 	
 	public static function isValidCommandName( $name ) {
 		return preg_match('/^[a-zA-Z_][-\w]*$/', $name);

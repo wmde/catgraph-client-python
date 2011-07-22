@@ -85,16 +85,24 @@ class gpMediaWikiGlue extends gpMySQLGlue {
 		$this->add_arcs( $src );
 	}
 	 
-	public function get_subcategories( $cat, $depth ) {
+	public function get_subcategories( $cat, $depth, $without = null, $without_depth = null ) {
 		$sink = new gpArraySink();
 		
 		$id = $this->get_page_id( NS_CATEGORY, $cat );
-
 		if ( !$id ) return 'NONE';
+		
+		if ( $without ) $without_id = $this->get_page_id( NS_CATEGORY, $without );
+		else $without_id = false;
 
 		$temp = $this->make_temp_sink( new gpMySQLTable('?', 'id') );
 		
-		$status = $this->traverse_successors( $id, $depth, $temp );
+		if ( $without_id ) {
+			if ( !$without_depth ) $without_depth = $depth;
+			$status = $this->traverse_successors_without( $id, $depth, $without_id, $without_depth, $temp );
+		} else {
+			$status = $this->traverse_successors( $id, $depth, $temp );
+		}
+		
 		$temp->close();
 		
 		if ( $status == 'OK' ) {
@@ -491,18 +499,28 @@ class gpPageSet {
 		return true;
 	}
 	
-	public function add_subcategories( $cat, $depth ) {
-		$this->add_subcategory_ids($cat, $depth);
+	public function add_subcategories( $cat, $depth, $without = null, $without_depth = null ) {
+		$this->add_subcategory_ids($cat, $depth, $without, $without_depth);
 		$this->resolve_ids();
 		return true;
 	}
 	
-	protected function add_subcategory_ids( $cat, $depth ) {
+	protected function add_subcategory_ids( $cat, $depth, $without = null, $without_depth = null ) {
 		$id = $this->glue->get_page_id( NS_CATEGORY, $cat );
 		if ( !$id ) return false;
+		
+		if ( $without ) $without_id = $this->glue->get_page_id( NS_CATEGORY, $without );
+		else $without_id = false;
 
 		$sink = $this->make_id_sink();
-		$status = $this->glue->traverse_successors( $id, $depth, $sink );
+		
+		if ( $without_id ) {
+			if ( !$without_depth ) $without_depth = $depth;
+			$status = $this->glue->traverse_successors_without( $id, $depth, $without_id, $without_depth, $sink );
+		} else {
+			$status = $this->glue->traverse_successors( $id, $depth, $sink );
+		}
+		
 		$sink->close();
 		return true;
 	}
