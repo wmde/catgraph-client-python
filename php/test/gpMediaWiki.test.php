@@ -232,7 +232,7 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 
 		//-----------------------------------------------------------
 		$set->clear();
-		$ok = $set->add_pages_in("Portals", 0, 5);
+		$ok = $set->add_pages_in("Portals", NS_MAIN, 5);
 		$this->assertTrue( $ok );
 		
 		$a = $set->capture();
@@ -341,6 +341,118 @@ class gpMediaWikiTest extends gpSlaveTestBase {
         //-----------------------------------------------------------
         $beer->dispose();
         $cheese->dispose();
+	}
+
+    public function testDeleteWhere() {
+        $this->makeWikiStructure();
+		$this->gp->add_arcs_from_category_structure();
+
+		$set = new gpPageSet($this->gp);
+		$set->create_table();
+		
+		$set->add_pages_in("topics", null, 5);
+		
+		//-----------------------------------------------------------
+		$set->delete_where( "where page_namespace = " . NS_CATEGORY );
+		
+		$a = $set->capture();
+		$expected = array(array(1111, NS_MAIN, "Lager"), 
+							array(1112, NS_MAIN, "Pils"), 
+							array(1122, NS_MAIN, "Toe_Cheese"));
+		
+        $this->assertEquals($expected, $a );
+        
+ 		//-----------------------------------------------------------
+       $set->dispose();
+	}
+
+    public function testDeleteUsing() {
+        $this->makeWikiStructure();
+		$this->gp->add_arcs_from_category_structure();
+
+		$set = new gpPageSet($this->gp);
+		$set->create_table();
+		
+		$set->add_pages_in("topics", null, 5);
+		
+		//-----------------------------------------------------------
+		$sql = " JOIN " . $this->gp->wiki_table("templatelinks") . " as X ";
+		$sql .= " ON T.page_id = X.tl_from ";
+		$sql .= " WHERE X.tl_namespace = " . NS_TEMPLATE;
+		$sql .= " AND X.tl_title = " . $this->gp->quote_string("Yuck");
+		
+		$set->delete_using( $sql );
+		
+		$a = $set->capture(NS_MAIN);
+		$expected = array(array(1112, NS_MAIN, "Pils"));
+		
+        $this->assertEquals($expected, $a );
+        
+		//-----------------------------------------------------------
+        $set->dispose();
+	}
+
+    public function testStripNamespace() {
+        $this->makeWikiStructure();
+		$this->gp->add_arcs_from_category_structure();
+
+		$set = new gpPageSet($this->gp);
+		$set->create_table();
+		
+		//-----------------------------------------------------------
+		$set->clear();
+		$set->add_pages_in("topics", null, 5);
+		$set->strip_namespace( NS_CATEGORY );
+		
+		$a = $set->capture();
+		$expected = array(array(1111, NS_MAIN, "Lager"), 
+							array(1112, NS_MAIN, "Pils"), 
+							array(1122, NS_MAIN, "Toe_Cheese"));
+		
+        $this->assertEquals($expected, $a );
+		
+		//-----------------------------------------------------------
+		$set->clear();
+		$set->add_pages_in("Portals", null, 5);
+		$set->strip_namespace( array(NS_CATEGORY, NS_PROJECT) );
+		
+		$a = $set->capture();
+		$expected = array(array(1, NS_MAIN, "Main_Page"));
+		
+        $this->assertEquals($expected, $a );
+        
+  		//-----------------------------------------------------------
+		$set->dispose();
+	}
+
+    public function testRetainNamespace() {
+        $this->makeWikiStructure();
+		$this->gp->add_arcs_from_category_structure();
+
+		$set = new gpPageSet($this->gp);
+		$set->create_table();
+		
+		//-----------------------------------------------------------
+		$set->clear();
+		$set->add_pages_in("topics", null, 5);
+		$set->retain_namespace( array(NS_MAIN) );
+		
+		$a = $set->capture();
+		$expected = array(array(1111, NS_MAIN, "Lager"), 
+							array(1112, NS_MAIN, "Pils"), 
+							array(1122, NS_MAIN, "Toe_Cheese"));
+		
+        $this->assertEquals($expected, $a );
+		
+		//-----------------------------------------------------------
+		$set->clear();
+		$set->add_pages_in("Portals", null, 5);
+		$set->retain_namespace( NS_MAIN );
+		
+		$a = $set->capture();
+		$expected = array(array(1, NS_MAIN, "Main_Page"));
+		
+        $this->assertEquals($expected, $a );
 	}
 
 }
