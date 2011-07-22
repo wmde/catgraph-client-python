@@ -229,6 +229,21 @@ class gpPageSet {
 		return $this->glue->mysql_query( $sql );
 	} 
 	
+	public function delete_where( $where ) {
+		$sql= "DELETE FROM " . $this->table ." ";
+		$sql .= $where;
+		
+		return $this->glue->mysql_query( $sql );
+	} 
+	
+	public function delete_using( $using, $tableAlias = "T" ) {
+		$sql= "DELETE FROM $tableAlias ";
+		$sql .= "USING " . $this->table ." AS $tableAlias ";
+		$sql .= $using;
+		
+		return $this->glue->mysql_query( $sql );
+	} 
+	
 	public function resolve_ids( ) {
 		//NOTE: MySQL can't perform self-joins on temp tables. so we need to copy the ids to another temp table first.
 		$t = new gpMySQLTable("?", "page_id");
@@ -392,6 +407,21 @@ class gpPageSet {
 		$this->glue->mysql_query($sql);
 		return true;
 	}
+
+	public function strip_namespace( $ns, $inverse = false ) {
+		$sql = "DELETE FROM " . $this->table;
+		$sql .= " WHERE " . $this->namespace_field;
+		
+		if ( is_array($ns) ) $sql .=  ( $inverse ? " not in " : " in " ) . $this->glue->as_list( $ns ); 
+		else $sql .= ( $inverse ? " != " : " = " ) . (int)$ns; 
+			
+		$this->glue->mysql_query($sql);
+		return true;
+	}
+
+	public function retain_namespace( $ns ) {
+		return $this->strip_namespace( $ns, true );
+	}
 	
 	public function add_page( $id, $ns, $title ) {
 		if ( !$id ) $id = $this->glue->get_page_id( NS_CATEGORY, $cat );
@@ -418,7 +448,7 @@ class gpPageSet {
 		return true;
 	}
 	
-	public function expand_categories( $ns ) {
+	public function expand_categories( $ns = null ) {
 		//NOTE: MySQL can't perform self-joins on temp tables. so we need to copy the category names to another temp table first.
 		$t = new gpMySQLTable("?", "cat_title");
 		$t->set_field_definition("cat_title", "VARCHAR(255) BINARY NOT NULL");
