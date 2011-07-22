@@ -25,14 +25,15 @@ class gpMediaWikiGlue extends gpMySQLGlue {
 	function __construct( $transport ) {
 		parent::__construct($transport);
 
-		$h = array( $this, 'gp_mediawiki_exec_handler' );
-		$this->addExecHandler( $h );
+		//$h = array( $this, 'gp_mediawiki_exec_handler' );
+		//$this->addExecHandler( $h );
 	}
 	
 	public function set_table_prefix( $prefix ) {
 		$this->table_prefix = $prefix;
 	}
 	
+	/*
 	public function gp_mediawiki_exec_handler( $glue, &$command, &$source, &$sink, &$has_output, &$status ) {
 		if ( preg_match('/^wiki-(.*)$/', $command[0], $m) ) {
 			$name = str_replace('-', '_', $m[0]);
@@ -46,6 +47,7 @@ class gpMediaWikiGlue extends gpMySQLGlue {
 
 		return true;
 	}
+	*/
 	
 	public function get_db_key( $name ) { 
 		//TODO: use native MediaWiki method if available
@@ -83,7 +85,9 @@ class gpMediaWikiGlue extends gpMySQLGlue {
 		$this->add_arcs( $src );
 	}
 	 
-	public function wiki_subcategories_impl( $cat, $depth, gpDataSink $sink ) {
+	public function get_subcategories( $cat, $depth ) {
+		$sink = new gpArraySink();
+		
 		$id = $this->get_page_id( NS_CATEGORY, $cat );
 
 		if ( !$id ) return 'NONE';
@@ -106,9 +110,10 @@ class gpMediaWikiGlue extends gpMySQLGlue {
 		
 		$temp->drop();
 		
-		return $status;
+		return $sink->getData();
 	}
 
+	/*
 	public function wiki_pages_in( $cat, $ns, $depth, gpDataSink $sink ) {
 		$id = $this->get_page_id( NS_CATEGORY, $cat );
 
@@ -145,6 +150,7 @@ class gpMediaWikiGlue extends gpMySQLGlue {
 		
 		return $status;
 	}
+	* */
 
 	/*
 	public function update_successors( int $page_id ) {

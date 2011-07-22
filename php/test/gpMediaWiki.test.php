@@ -135,18 +135,19 @@ class gpMediaWikiTest extends gpSlaveTestBase {
         $this->assertEquals(array(array(110), array(1110), array(2110), array(1120)), $a );
     }
 
-    public function testWikiSubcategories() {
+    public function testGetSubcategories() {
         $this->makeWikiStructure();
 		$this->gp->add_arcs_from_category_structure();
 
 		//-----------------------------------------------------------
-		$a = $this->gp->capture_wiki_subcategories("topics", 5);
+		$a = $this->gp->get_subcategories("topics", 5);
         $this->assertEquals(array(array("Topics"), 
 									array("Beer"), 
 									array("Bad_Cheese"), 
 									array("Cheese")), $a );
 	}
 
+	//////////////////////////////////////////////////////////////////////////////////////
     public function testAddSubcategories() {
         $this->makeWikiStructure();
 		$this->gp->add_arcs_from_category_structure();
