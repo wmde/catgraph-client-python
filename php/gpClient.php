@@ -431,15 +431,21 @@ class gpArraySink extends gpDataSink {
  */
 class gpPipeSink extends gpDataSink {
 	var $hout;
+	var $linebreak;
 	
 	/**
 	 * Initializes a new pipe sink with the given file handle.
 	 * 
 	 * @param resource $hout a file handle that can be written to, such as 
 	 *        returned by fopen or fsockopen.
+	 * @param string $linebreak character(s) to use to separate rows in the
+	 *        output (default: GP_LINEBREAK)
 	 */
-	public function __construct( $hout ) {
+	public function __construct( $hout, $linebreak = null ) {
+		if ( !$linebreak ) $linebreak = GP_LINEBREAK;
+		
 		$this->hout = $hout;
+		$this->linebreak = $linebreak;
 	}
 
 	/**
@@ -456,7 +462,7 @@ class gpPipeSink extends gpDataSink {
 		$s = gpConnection::joinRow( $row );
 
 		#print "--- $s\n";
-		gpPipeTransport::send_to( $this->hout, $s . GP_LINEBREAK ); 
+		gpPipeTransport::send_to( $this->hout, $s . $this->linebreak ); 
 	}
 	
 	/**
@@ -485,20 +491,24 @@ class gpFileSink extends gpPipeSink {
 	 * 
 	 * @param string $path the path to the local file to write to.
 	 * @param boolean $append whether to append to the file, or override it
+	 * @param string $linebreak character(s) to use to separate lines in the
+	 *        resulting file (default: PHP_EOL)
 	 * 
 	 * @throws gpClientException if the file could not be opened.
 	 */
-	public function __construct( $path, $append = false ) {
+	public function __construct( $path, $append = false, $linebreak = null ) {
 		if ( $append === true ) $this->mode = 'a';
 		else if ( $append === false ) $this->mode = 'w';
 		else $this->mode = $append;
+		
+		if ( !$linebreak ) $linebreak = PHP_EOL;
 		
 		$this->path = $path;
 		
 		$h = fopen( $this->path, $this->mode );
 		if ( !$h ) throw new gpClientException( "failed to open " . $this->path );
 		
-		gpPipeSink::__construct( $h );
+		gpPipeSink::__construct( $h, $linebreak );
 	}
 
 	/**

@@ -279,7 +279,7 @@ class gpSlaveTest extends gpSlaveTestBase
 		
 		//set up the sink
 		$f = tempnam(sys_get_temp_dir(), 'gpt');
-		$sink = new gpFileSink($f);
+		$sink = new gpFileSink($f, false, "\n");
 		
 		//generate output
 		$this->gp->add_arcs( array(
