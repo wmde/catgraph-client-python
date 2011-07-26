@@ -910,54 +910,260 @@ class gpSlaveTransport extends gpPipeTransport {
 	
 }
 
+/**
+ * This class represents an active connection to a graph. It can be seen as the local
+ * interface to the graph that allows the graph to be queried and manipulated,
+ * using the command set specified for GraphCore and GraphServ. The communication with
+ * the peer process that manages the actual graph (a slave GraphCore instance or
+ * a remote GraphCore server) is performed by an instance of the apprpriate subclass of
+ * gpTransport.
+ * 
+ * Instances of gpConnection that use the appropriate transport can be created conveniently
+ * using the static factory methods called new_xxx_connection.
+ * 
+ * Besides some methods for managing the connection and some utility functions,
+ * gpConnection exposes the GraphCore and GraphServ command sets. The commands are
+ * exposed as "virtual" methods: they are not implemented explicitely,
+ * instead, the __call() method is used to map method calls to GraphCore commands.
+ * No local checks are performed on the command call, so it's up to the peer to
+ * decide which commands exist. Note that this means that a gpConnection actually exposes
+ * more commands if it is connected to a GraphServ instance (simply because the peer
+ * then supports more commands).
+ * 
+ * The mapping of method calls to commands is performed as follows:
+ * 
+ * * underscores are converted to dashes: the method add_arcs corresponds to the 
+ *   add-arcs command in GraphCore. 
+ * 
+ * * any int or string parameters passed to the method are passed on to the
+ *   command call, in the order they were specified.
+ * 
+ * * parameters that are instances of gpDataSource will be used to pass a data set
+ *   to the command. That is, rows from the data source are passed to the command as
+ *   input.
+ * 
+ * * parameters that are instances of gpDataSink will be used to handle any data
+ *   the command outputs. That is, rows from the command's output data set
+ *   will be passed to the data sink, one by one.
+ * 
+ * * parameters that are arrays are wrapped in a new instance of gpArraySource and used 
+ *   as input for the command, as described above. This is convenient for passing 
+ *   data directly to the command.
+ * 
+ * * parameters given as null or false are ignored.
+ * 
+ * * other types of arguments trigger a gpUsageException
+ * 
+ * A command called in this way, using its "plain" method counterpart, always
+ * returns the status string from the peer's response upon successful execution.
+ * The status may be "OK" or "NONE". Any failure on the server side triggers a
+ * gpProcessorException. Any output of the command is passed to the gpDataSink 
+ * that was provided as a parameter (or ignored if no sink was provided).
+ * 
+ * However, modifiers can be attached to the method name to cause the command's
+ * outcome to be treated differently:
+ * 
+ * * if the method name is prefixed with "try_", no gpProcessorException are thrown.
+ *   Instead, errors reported by the peer cause the method to return false.
+ *   The cause of the error may be examined using the getStatus() and getStatusMessage()
+ *   methods. Not that other exceptions like gpProtocollException or gpUsageException
+ *   are still thrown as usual.
+ * 
+ * * if the method name is prefixed with "capture_", the command's output is collected
+ *   and returned as an array of arrays, representing the rows of data. If the command
+ *   fails, a gpProcessorException is raised, as usual (or, if try_ is also specified, 
+ *   the method returns false).
+ * 
+ * * if the method name is suffixed with _map AND prefixed with "capture_", 
+ *   the command's output is collected and returned as an associative array. 
+ *   This is especially useful for commands like "stats" that provide values 
+ *   for set of well known properties.
+ *   To build the associative array, rows from the output are interpreted as 
+ *   a key-value pairs. If the _map suffix is used without the capture_ prefix, 
+ *   a gpUsageException is raised.
+ * 
+ * Modifiers can also be combined. For instance, try_capture_stats_map would
+ * return GraphCore stats as an associative array, or null of the call failed.
+ * 
+ * Additional modifiers or extra virtual methods can be added by subclasses
+ * by overriding the __call() method or by registering handlers with the
+ * addCallHandler() or addExecHandler() methods.
+ */
 class gpConnection {
+	
+	/**
+	 * The transport used to communicate with the peer that manages the actual graph.
+	 */
 	protected $transport = null;
+	
+	/**
+	 * If true, the protocol session is "out of step" and no further commands can
+	 * be processed.
+	 */
 	protected $tainted = false;
+	
+	/**
+	 * The status string returned by the last command call.
+	 */
 	protected $status = null;
+	
+	/**
+	 * The status message returned by the last command call.
+	 */
 	protected $statusMessage = null;
+	
+	/**
+	 * The response from the last command call, including the status string and
+	 * status message.
+	 */
 	protected $response = null;
 	
+	/**
+	 * call handlers, see addCallHandler()
+	 */
 	protected $call_handlers = array();
+	
+	/**
+	 * Exec handlers, see addExecHandler().
+	 */
 	protected $exec_handlers = array();
 	
+	/**
+	 * If peer-side input and output redirection should be allowed. For security reasons,
+	 * and to avoid confusion, i/o redirection is disabled per default.
+	 */
 	public $allowPipes = false;
+	
+	/**
+	 * Whether arguments should be restricted to alphanumeric strings.
+	 * Enabled by default.
+	 */
 	public $strictArguments = true;
 
+	/**
+	 * Debug mode enables lots of output to stdout.
+	 */
 	public $debug = false;
 	
-	public function __construct( $transport ) {
+	/**
+	 * Initializes a new connection with the given instance of gpTransport.
+	 * 
+	 * Note: Instances of gpConnection that use the appropriate transport can be created conveniently
+	 * using the static factory methods called new_xxx_connection.
+	 */
+	public function __construct( gpTransport $transport ) {
 		$this->transport = $transport;
 	}
 
+	/**
+	 * Connects to the peer. 
+	 * 
+	 * For connecting, this method relies solely on the
+	 * transport instance, which in turn uses the information passed to its 
+	 * constructor to establish the connection.
+	 * 
+	 * After connecting, this method calls checkProtocolVersion() to make sure
+	 * the peer speaks the correct protocol version. If not, a gpProtocolException
+	 * is raised.
+	 */
 	public function connect() {
 		$this->transport->connect();
 		$this->checkProtocolVersion();
 	}
 	
-	public function addCallHandler( $handler ) { //$handler($this, &$cmd, &$args, &$source, &$sink, &$capture, &$result)
+	/**
+	 * Registers a call handler. The handler will be called before __call
+	 * interprets a method call as a GraphCore command, and can be used to
+	 * add support for additional virtual methods or extra modifiers.
+	 * 
+	 * The handler must be a callable that accepts the following parameters:
+	 * 
+	 * * $connection this gpConnection instance
+	 * * &$cmd a reference to the command name, as a string, with the try_,
+	 *         capture_ and _map modifiers removed.  
+	 * * &$args a reference to the argument array, unprocessed, as passed to
+	 *          the method.
+	 * * &$source a reference to a gpDatSource (or null), may be altered to 
+	 *            change the command's input.
+	 * * &$sink a reference to a gpDatSink (or null), may be altered to 
+	 *            change the output handlking for the command.
+	 * * &$capture a reference to the capture flag. If true, output will be 
+	 *             captured and returned as an array.
+	 * * &$result the result to return from the method call, used only if
+	 *            the handler returns false.
+	 * 
+	 * If the handler returns false, the value of $result will be returned
+	 * from __call and no further action is taken.
+	 */
+	public function addCallHandler( $handler ) { //$handler($connection, &$cmd, &$args, &$source, &$sink, &$capture, &$result)
 		$this->call_handlers[] = $handler;
 	}
 	
-	public function addExecHandler( $handler ) { //$handler($this, &$command, &$source, &$sink, &$has_output, &$status)
+	/**
+	 * Registers a call handler. The handler will be called before __call
+	 * passes a command to the exec() method, and can thus be used to
+	 * add support for additional "artificial" commands that use the same parameter
+	 * handling as is used for "real" GraphCore commands.
+	 * 
+	 * The handler must be a callable that accepts the following parameters:
+	 * 
+	 * * $connection this gpConnection instance
+	 * * &$command a refference to the command, as an array. The first field is the command name,
+	 *             the remaining fields contain the parameters for the command.
+	 * * &$source a reference to a gpDatSource (or null), may be altered to 
+	 *            change the command's input.
+	 * * &$sink a reference to a gpDatSink (or null), may be altered to 
+	 *            change the output handlking for the command.
+	 * * &$status the commands return status, used of the handler returns false.
+	 * 
+	 * If the handler returns false, the value of $status will be used as the
+	 * command's result, and no command will be sent to the peer. The value
+	 * of $status is treated the same way the status returned from the peer is:
+	 * e.g. a gpProcessorException is thrown if the status is "FAILED", etc.
+	 * Also, modifiers like capture_ are applied to the output in the same way
+	 * as they are for "normal" commands.
+	 */
+	public function addExecHandler( $handler ) { //$handler($connection, &$command, &$source, &$sink, &$has_output, &$status)
 		$this->exec_handlers[] = $handler;
 	}
 	
+	/**
+	 * Returns the status string that resulted from the last command call. The status string is 
+	 * 'OK' or 'NONE' for successfull calls, or 'FAILED', 'ERROR' or 'DENIED' for unsuccessful
+	 * calls. Refer to the GraphCore and GraphServ documentation for details.
+	 */
 	public function getStatus() {
 		return $this->status;
 	}
 	
+	/**
+	 * Returns true if close() was called on this connection, or it was closed for
+	 *  some other reason. No commands can be called on a closed connection.
+	 */
 	public function isClosed() {
 		return $this->transport->isClosed();
 	}
 	
+	/**
+	 * Returns the status message that resulted from the last command call. The status message
+	 * is the informative message that follows the status string in the response from a command
+	 * call. It may be useful for human eyes, but should not be processed programmatically.
+	 */
 	public function getStatusMessage() {
 		return $this->statusMessage;
 	}
 	
+	/**
+	 * Returns the response that the last command call evoked, consisting of the status string
+	 * and the status message.
+	 */
 	public function getResponse() {
 		return $this->response;
 	}
 	
+	/**
+	 * Utility method for printing messages to stdout when debug mode is enabled.
+	 */
 	protected function trace( $context, $msg, $obj = 'nothing878423really' ) {
 		if ( $this->debug ) {
 			if ( $obj !== 'nothing878423really' ) {
@@ -968,26 +1174,45 @@ class gpConnection {
 		}
 	}
 	
+	/**
+	 * Attempts to check if the peer is still alive.
+	 */
 	public function checkPeer() {
 		$this->transport->checkPeer();
 	} 
 	
+	/**
+	 * Enabled or disables the debug mode. In debug mode, tons of diagnostic
+	 * information are written to stdout.
+	 * 
+	 * @param bool $debug 
+	 */
 	public function setDebug($debug) {
 		$this->debug = $debug;
 		$this->transport->setDebug($debug);
 	} 
 	
+	/**
+	 * Returns the protocol version reported by the peer.
+	 */
 	public function getProtocolVersion() {
 		$this->protocol_version();
 		$version = trim($this->statusMessage);
 		return $version;
 	} 
 	
+	/**
+	 * Raises a gpProtocolException if the protocol version reported by the peer is
+	 * not compatible with GP_CLIENT_PROTOCOL_VERSION.
+	 */
 	public function checkProtocolVersion() {
 		$version = $this->getProtocolVersion();
 		if ( $version != GP_CLIENT_PROTOCOL_VERSION ) throw new gpProtocolException( "Bad protocol version: expected " . GP_CLIENT_PROTOCOL_VERSION . ", but peer uses " . $version );
 	} 
 	
+	/**
+	 * Attempts to check if the peer is still responding.
+	 */
 	public function ping() {
 		$re = $this->protocol_version();
 		$this->trace(__METHOD__, $re);
@@ -995,6 +1220,14 @@ class gpConnection {
 		return $re;
 	}
 	
+	/**
+	 * implementation of the magic __call() method that intercepts calls to
+	 * undeclared methods and mapps them to calls to graph commands on the peer.
+	 * Refer to the class level documentation of gpConnection for details.
+	 * 
+	 * @param string name the method name
+	 * @param array arguments the arguments passed to the method
+	 */
     public function __call($name, $arguments) {
 		$cmd = str_replace( '_', '-', $name);
 		$cmd = preg_replace( '/^-*|-*$/', '', $cmd);
@@ -1018,6 +1251,7 @@ class gpConnection {
 		}
 		
 		if ( preg_match( '/-map$/', $cmd ) ) {
+			if (!$capture) throw new gpUsageException( "using the _map suffix without the capture_ prefix is meaningless" );
 			$cmd = substr( $cmd, 0, strlen($cmd) -4 );
 			$map = true;
 		} else { 		
@@ -1038,13 +1272,13 @@ class gpConnection {
 			} else if ( is_object( $arg ) ) {
 				if ( $arg instanceof gpDataSource ) $source = $arg;
 				else if ( $arg instanceof gpDataSink ) $sink = $arg;
-				else throw new Exception( "arguments must be primitive or a gpDataSource or gpDataSink. Found " . get_class($arg) );
+				else throw new gpUsageException( "arguments must be primitive or a gpDataSource or gpDataSink. Found " . get_class($arg) );
 			} else if ( $arg === null || $arg === false ) {
 				continue;
 			} else if ( is_string($arg) || is_int($arg) ) {
 				$command[] = $arg;
 			} else {
-				throw new Exception( "arguments must be objects, strings or integers. Found " . type($arg) );
+				throw new gpUsageException( "arguments must be objects, strings or integers. Found " . type($arg) );
 			}
 		}
 		
@@ -1097,6 +1331,28 @@ class gpConnection {
 		}
     }
     
+	/**
+	 * Applies a command to the graph, that is, runs the command on the peer.
+	 * 
+	 * Note: this method implements the protocol used to interact with the peers,
+	 * based upon the line-by-line communication provided by the transport 
+	 * instance. Interaction with the peer is stateless between calls to this
+	 * function (except of course for the contents of the graph itself).
+	 * 
+	 * @param mixed $command the command, as a single string or as an array containing
+	 *              the command name and any arguments.
+	 * @param gpDataSource $source the data source to take the commands input from (or null)
+	 * @param gpDataSink $sink the data sink to pass the commands output to (or null)
+	 * @param bool &$has_output a reference parameter that gets set to true if the command
+	 *        generated output, and to false if it didn't.
+	 * 
+	 * @return string containing the status string returned by the command
+	 * 
+	 * @throws gpProtocolException if a communication error ocurred while talking to the peer
+	 * @throws gpProcessorException if the peer reported an error
+	 * @throws gpUsageException if $command does not conform to the rules for commands. Note that
+	 *         $this->strictArguments and $this->alloPipes influence which commands are allowed.
+	 */
 	public function exec( $command, gpDataSource $source = null, gpDataSink $sink = null, &$has_output = null ) {
 		$this->trace(__METHOD__, "BEGIN");
 		
@@ -1227,22 +1483,49 @@ class gpConnection {
 		return $this->status;
 	}
 
+	/**
+	 * Implements a "fake" command traverse-successors-without which returns all decendants of onw nodes
+	 * minus the descendants of some other nodes. This is a convenience function for a common case that
+	 * could otherwise only be covered by implementing the set operation in php, or by using exec().
+	 * 
+	 * This method should not be called directly. Instead, use the virtual method traverse_successors_without
+	 * in the same way as normal commands are called. This include support for modifiers and flexible
+	 * handling of method parameters.
+	 */
 	public function traverse_successors_without_impl( $id, $depth, $without, $without_depth, $source, $sink, &$has_output = null ) {
 		if ( !$without_depth ) $without_depth = $depth;
 		return $this->exec( "traverse-successors $id $depth &&! traverse-successors $without $without_depth", $source, $sink, $has_output );
 	}
-	
-	
+		
+	/**
+	 * Checks if the given name is a valid command name. Command names consist of
+	 * a letter followed by any number of letters, numbers, or dashes.
+	 */
 	public static function isValidCommandName( $name ) {
 		return preg_match('/^[a-zA-Z_][-\w]*$/', $name);
 	}
 	
+	/**
+	 * Checks if the given string passes some sanity checks. The command string must
+	 * start with a valid command, and it must not contain any non-printable or
+	 * non-ascii characters.
+	 */
 	public static function isValidCommandString( $command ) {
 		if ( !preg_match('/^[a-zA-Z_][-\w]*($|[\s!&|<>#:])/', $command) ) return false; // must start with a valid command
 		
 		return !preg_match('/[\0-\x1F\x80-\xFF]/', $command);
 	}
 	
+	/**
+	 * Checks if the given string is a valid argument. If $strict is set, 
+	 * it checks of $arg consists of an alphanumeric character followed by
+	 * any number of alphanumerics, colons or dashes. If $strict is not set,
+	 * this just checks that $arg doesn't contain any non-printable or
+	 * non-ascii characters.
+	 * 
+	 * @param string $arg the argument to check
+	 * @param bool $strict whether to perform a strict check (default: true).
+	 */
 	public static function isValidCommandArgument( $arg, $strict = true ) {
 		if ( $arg === '' || $arg === false || $arg === null ) return false;
 
@@ -1251,6 +1534,17 @@ class gpConnection {
 		return !preg_match('/[\0-\x1F\x80-\xFF:|<>!&#]/', $arg); //low chars, high chars, and operators.
 	}
 	
+	/**
+	 * Converts a line from a data set into an array. If $s is empty,
+	 * this method returns false. if $s starts with "#", it's considered
+	 * to consist of a single string field. Otherwise, the string is split
+	 * on ocurrances of TAB, semikolon or comma. Numeric field values are
+	 * converted to int, other feelds remain strings.
+	 * 
+	 * @param string $s the row from the data set, as a string
+	 * 
+	 * @return array containing the fields in $s, or false if $s is empty.
+	 */
 	public static function splitRow( $s ) {
 		if ( $s === '' ) return false;
 		if ( $s === false || $s === null ) return false;
@@ -1270,6 +1564,14 @@ class gpConnection {
 		return $row;
 	}
 
+	/**
+	 * Joins an array into a data set row represented as a string.
+	 * Values in $row are joined together using commas as separators.
+	 * 
+	 * @param array $row the data row
+	 * 
+	 * @return string containing the fields from $row
+	 */
 	public static function joinRow( $row ) {
 		if ( empty($row) ) return '';
 		
@@ -1287,6 +1589,19 @@ class gpConnection {
 		return $s;
 	}
 	
+	/**
+	 * Copies all data from the given source into the current command stream,
+	 * that is, passes them to the client line by line. 
+	 * 
+	 * Note that this must only be called after passing a command line terminated by ":"
+	 * to the peer, so the peer expects a data set.
+	 * 
+	 * This is implemented by calling the transport's make_sink() method
+	 * to create a sink for writing to the command stream, and then using the copy()
+	 * method to transfer the data.
+	 * 
+	 * Note that $source is not automatically closed by this method.
+	 */
 	protected function copyFromSource( gpDataSource $source ) {
 		$sink = $this->transport->make_sink();
 		
@@ -1296,7 +1611,7 @@ class gpConnection {
 
 		// $source->close(); // to close or not to close...
 
-		$this->transport->send( GP_LINEBREAK ); 
+		$this->transport->send( GP_LINEBREAK ); //XXX: flush again??
 
 		$this->trace(__METHOD__, "copy complete.");
 
@@ -1311,6 +1626,19 @@ class gpConnection {
 		*/
 	}
 
+	/**
+	 * Copies all data from the command response into the given sink,
+	 * that is, receives data from the peer line by line. 
+	 * 
+	 * Note that this must only be called after the peer sent a response line that
+	 * endes with ":", so we know the peer is waiting to send a data set.
+	 * 
+	 * This is implemented by calling the transport's make_source() method
+	 * to create a source for reading from the command stream, and then using the copy()
+	 * method to transfer the data.
+	 * 
+	 * Note that $sink is flushed but not closed before this method returns.
+	 */
 	protected function copyToSink( gpDataSink $sink = null ) {
 		$source = $this->transport->make_source();
 		
@@ -1335,6 +1663,12 @@ class gpConnection {
 		} */
 	}
 	
+	/**
+	 * Utility method for transferring all rows from a data source to a data sink.
+	 * If $sink is null, all rows are read from the source and then discarded.
+	 * 
+	 * Before returning, the sink is flushed to commit any pending data.
+	 */
 	public function copy( gpDataSource $source, gpDataSink $sink = null, $indicator = '<>' ) {
 		while ( $row = $source->nextRow() ) {
 			if ( $sink) {
@@ -1348,20 +1682,51 @@ class gpConnection {
 		if ( $sink ) $sink->flush();
 	}
 
+	/**
+	 * Closes this connection by closing the underlying transport.
+	 */
 	public function close() {
 		$this->transport->close();
 	}
 	 
-	 
+	/**
+	 * Creates a new connection for accessing a remote graph managed by a GraphServ service.
+	 * Returns a gpConnection that uses a gpClientTransport to talk to the remote graph.
+	 * 
+	 * @param string $graphname the name of the graph to connect to
+	 * @param string $host (default: 'localhost') the host the GraphServ process is located on.
+	 * @param int $port (default: GP_PORT) the TCP port the GraphServ process is listening on.
+	 */
 	public static function new_client_connection( $graphname, $host = false, $port = false ) {
 		return new gpConnection( new gpClientTransport($graphname, $host, $port) );
 	}
 
+	/**
+	 * Creates a new connection for accessing a graph managed by a slave GraphCore process.
+	 * Returns a gpConnection that uses a gpSlaveTransport to talk to the local graph.
+	 * 
+	 * @param mixed $command the command line to start GraphCore. May be given as a
+	 *        string or as an array. If given as a string, all parameters must be duely
+	 *        escaped. If given as an array, $command[0] must be the path to the
+	 *        GraphCore executable. See gpSlavetransport::makeCommand() for more details.
+	 * @param string $cwd (default: null) the working dir to run the slave process in. 
+	 *        Defaults to the current working directory.
+	 * @param int $env (default: null) the environment variables to pass to the 
+	 *        slave process. Defaults to inheriting the PHP script's environment.
+	 */
 	public static function new_slave_connection( $command, $cwd = null, $env = null ) {
 		return new gpConnection( new gpSlaveTransport($command, $cwd, $env) );
 	}
 }
 
+/**
+ * Extracts a column from a tabular structure
+ * 
+ * @param array $a an array of equal-sized arrays, representing a table as a list of rows.
+ * @param mixed $col the column key (usually an int or string) of the column to extract
+ * 
+ * @return an array consisting of the values of column $col from each row in $a
+ */
 function array_column($a, $col) {
 	$column = array();
 	
@@ -1372,11 +1737,21 @@ function array_column($a, $col) {
 	return $column;
 }
 
-function pairs2map( $pairs ) {
+/**
+ * Converts a list of key value pairs to an associative array (aka a map).
+ * 
+ * @param array $pairs an array of key value paris, representing a map as a list of tuples.
+ * @param mixed $key_col the column that contains the key (default: 0)
+ * @param mixed $value_col the column that contains the value (default: 1)
+ * 
+ * @return an associative array built from the key value pairs in $pairs.
+ */
+function pairs2map( $pairs, $key_col = 0, $value_col = 1 ) {
 	$map = array();
 	
 	foreach ( $pairs as $p ) {
-		$map[ $p[0] ] = $p[1];
+		$k = $p[$key_col];
+		$map[ $k ] = $p[$value_col];
 	}
 	
 	return $map;
