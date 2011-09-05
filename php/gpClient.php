@@ -1521,7 +1521,7 @@ class gpConnection {
 	 * non-ascii characters.
 	 */
 	public static function isValidCommandString( $command ) {
-		if ( !preg_match('/^[a-zA-Z_][-\w]*($|[\s!&|<>#:])/', $command) ) return false; // must start with a valid command
+		if ( !preg_match('/^[a-zA-Z_][-\w]*\s*(:?\s*$|[\s!&]+\w|[|<>#])/', $command) ) return false; // must start with a valid command
 		
 		return !preg_match('/[\0-\x1F\x80-\xFF]/', $command);
 	}
