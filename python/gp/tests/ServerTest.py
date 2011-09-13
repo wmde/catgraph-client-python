@@ -4,7 +4,7 @@
 import unittest
 import os
 import tempfile
-from TestBase import *
+from test_base import *
 from gp.client import *
 
 TestGraphName = 'test' + str(os.getpid())

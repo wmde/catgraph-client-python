@@ -1,4 +1,4 @@
-from FuzzerBase import *
+from fuzzer_base import *
 from gp.client import *
 from test_config import *
 import sys

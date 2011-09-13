@@ -1,4 +1,4 @@
-from FuzzerBase import FuzzerBase
+from fuzzer_base import FuzzerBase
 from gp.client import Connection
 import random
 import sys

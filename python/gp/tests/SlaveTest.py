@@ -3,7 +3,7 @@
 
 import unittest
 import tempfile
-from TestBase import *
+from test_base import *
 from gp.client import *
 
 

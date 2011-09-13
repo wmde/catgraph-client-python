@@ -4,7 +4,7 @@
 import unittest
 import os
 import tempfile
-from TestBase import *
+from test_base import *
 from test_config import *
 from gp.client import *
  
