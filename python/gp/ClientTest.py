@@ -1,10 +1,16 @@
-import TestBase
+#!/usr/bin/python
+# -*- coding: utf-8
+
+import unittest
 import os
+import tempfile
+from TestBase import *
+from Client import *
 
 TestGraphName = 'test' + str(os.getpid())
 TestFilePrefix = '/tmp/gptest-' + str(os.getpid())
 
-class ClientTest (TestBase.ClientTestBase):
+class ClientTest (ClientTestBase, unittest.TestCase):
     """Test the TCP client connection.
 
     Client Connection Tests
@@ -18,3 +24,5 @@ class ClientTest (TestBase.ClientTestBase):
     """
 
 
+if __name__ == '__main__':
+	unittest.main()

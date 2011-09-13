@@ -47,10 +47,10 @@ import re
 import os
 import socket
 import time
-import pexpect
+import subprocess
+import inspect
 
-
-# __package__ = "gp"?
+#__package__ = "gp" #?
 
 LINEBREAK = "\r\n"
 """Linebreak to use when talking to GraphServ or GraphCore instances.
@@ -64,7 +64,9 @@ CLIENT_PROTOCOL_VERSION = 2
    reports a different protocol version, the conenction will be aborted."""
 
 
-
+def __function__ (shift = 1):
+    caller = inspect.stack()[shift]
+    return caller[3]
 
 class gpException(Exception):
     """Base class for exceptions in this module."""
@@ -75,7 +77,11 @@ class gpException(Exception):
         self.msg = msg
 
     def __str__(self):
-        """Determine that self.msg will appear in the error message."""
+        """Show type and name in the error message."""
+        return type(self).__name__ + ": " + self.msg
+
+    def getMessage(self):
+        """Returns the error message."""
         return self.msg
 
 
@@ -83,7 +89,7 @@ class gpProcessorException(gpException):
     """Exceptions for errors reported by the remote grap database"""
     def __init__(self, status, msg, command=False ):
         if command:
-            msg = msg + " Command was " + command
+            msg = msg + " Command was %s" % command
         gpException.__init__(self, msg)
         self.command = command
         self.status = status
@@ -191,7 +197,7 @@ class ArraySource( DataSource ):
             row = self.data[self.index]
             self.index = self.index + 1
             if not isinstance(row, (list,tuple)):
-                row = [row]
+                row = (row, )
             return row
         else:
             raise StopIteration()
@@ -272,7 +278,7 @@ class FileSource( PipeSource ):
         try:
             handle = file( self.path, self.mode )
         except IOError:
-            raise gpClientException( "failed to open " . self.path )
+            raise gpClientException( "failed to open " + self.path )
         PipeSource.__init__(self, handle)
          
     def close(self):  
@@ -307,7 +313,8 @@ class DataSink(object): #abstract
         should override it to make all pending changes permanent.
     
         """
-        raise NotImplementedError( "`flush()' called in abstract class" )
+        
+        pass
     
     def close(self):
         """Close this data output and releases allocated resources.
@@ -320,7 +327,8 @@ class DataSink(object): #abstract
         this method to release those resources.
    
         """ 
-        raise NotImplementedError( "`close()' called in abstract class" )
+        
+        self.flush()
          
      
 class NullSink( DataSink ):
@@ -351,7 +359,7 @@ class ArraySink(DataSink):
     returned.
 
     """
-    def __init__(self, data=[]):     #? data war Zeiger!
+    def __init__(self, data=None):     #? data war Zeiger!
         """Initializes a new ArraySink.
     
         @param array data (optional) an array the rows
@@ -359,6 +367,12 @@ class ArraySink(DataSink):
                created, and can be accessed using the getData() method.
     
         """
+        
+        if data is None:
+            #NOTE: don't use [] as a default param, otherwise we'll be 
+            #      using the same list instance for all calls!
+            data = []
+        
         self.data = data
          
     def putRow(self, row):
@@ -367,6 +381,7 @@ class ArraySink(DataSink):
         The data can be accessed using the getData() method.
 
         """
+        
         self.data.append(row)
          
     def getData(self):
@@ -485,12 +500,12 @@ class FileSink (PipeSink):
         try:
             h = file(self.path, self.mode)
         except Error:
-            raise gpClientException( "failed to open " + self.path )
+            raise gpClientException( "failed to open %s" % self.path )
         PipeSink.__init__(self, h, linebreak )
          
     def close(self):
         """closes the file handle (after flushing it)."""
-        PipeSink.close()
+        PipeSink.close(self)
         self.hout.close()
 
 
@@ -516,8 +531,9 @@ class Transport(object): # abstract
         """Trace an error."""
         if ( self.debug ):
             if obj != 'nothing878423really':
-                msg = msg + ': ' + re.sub('\s+', ' ', obj)
-            print "[Transport] " + context + ": " + msg + "\n"
+                msg = msg + ': ' + re.sub('\s+', ' ', str(obj))
+                
+            print "[Transport] %s: %s" % (context, msg)
     
     def isClosed(self):
         """Return True if this Transport is closed, e.g. with close()"""
@@ -633,7 +649,7 @@ class PipeTransport(Transport): # abstract
               "failed to send data to peer, broken pipe! "
               + "(Writing to the file failed.)")
         except:
-            print( "failed to send data to peer, broken pipe! "
+            raise gpClientException( "failed to send data to peer, broken pipe! "
               + "(A strange error occured.)")
             raise
          
@@ -732,8 +748,7 @@ class ClientTransport(PipeTransport):
             #XXX: configure timeout?
         except socket.error as (value, message):
             raise gpProtocolException(
-              "failed to connect to " + self.host + ":"
-              + str(self.port) + ': ' + str(value) + ' ' + message )
+              "failed to connect to %s:%s: %s %s" % (self.host, self.port, value, message) )
         
         self.hin = self.socket.makefile()
         self.hout = self.socket.makefile()
@@ -763,7 +778,7 @@ class ClientTransport(PipeTransport):
         self.closed = True
      
 
-class SlaveTransport(PipeTransport): #? Does not work!
+class SlaveTransport(PipeTransport):
     """A transport implementation for communicating
 
     with a GraphCore instance running in a local child process (i.e. as
@@ -796,7 +811,8 @@ class SlaveTransport(PipeTransport): #? Does not work!
         self.command = command
         self.cwd = cwd
         self.env = env
-        Transport.__init__(self)
+        self.process = None
+        PipeTransport.__init__(self)
     
     @staticmethod
     def makeCommand(command):
@@ -864,21 +880,28 @@ class SlaveTransport(PipeTransport): #? Does not work!
         """
         cmd = self.makeCommand(self.command)
         try:
-			pexpect.spawn(cmd,cwd=self.cwd,env=self.env) 
+            #pexpect.spawn(cmd,cwd=self.cwd,env=self.env) 
             # pty.spawn(cmd, self.hin, self.hout)
+            self.process = subprocess.Popen(cmd, cwd=self.cwd, env=self.env, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.STDOUT) 
+            
+            self.hin = self.process.stdout
+            self.hout = self.process.stdin
+            
         except Exception as ex:
-            self.trace(str(self), "failed to execute " + str(self.command))
-            raise gpProtocolException("failed to execute " + str(self.command))
+            self.trace(__function__(), "failed to execute %s" % str(self.command))
+            raise gpProtocolException("failed to execute %s" % str(self.command))
         
-        self.trace(str(self), "executing command "
-          + str(self.command) + " as " + str(self.process))
+        self.trace(__function__(), "executing command "
+          + str(self.command) + " as %s" % str(self.process))
                 
-        self.trace(str(self), "reading from " + str(self.hin))
-        self.trace(str(self), "writing to " + str(self.hout))
+        self.trace(__function__(), "reading from %s" % str(self.hin))
+        self.trace(__function__(), "writing to %s" % str(self.hout))
         
-        time.sleep(0.1)
+        #time.sleep(0.1)
         # XXX: NASTY HACK!
         # wait 1/10th of a second to see if the command actually starts
+        
+        self.checkPeer()
         
         return True
 
@@ -887,68 +910,29 @@ class SlaveTransport(PipeTransport): #? Does not work!
         raise NotImplementdError(
           "send_to should not be called for a SlaveTransport object.")
     
-    def send(self, s):
-        """Send a line of data to the file handle.
-
-        @type s:  string
-        @param s: the data to write
-        @raise gpProtocolException if writing fails.
-    
-        """
-        try:
-            self.process.sendline(s)
-        except Exception as ex:
-            raise gpProtocolException(
-              "failed to send data to peer, broken pipe! "
-              + "(Writing to the file failed.\nOriginal error:"
-              + str(ex))
-              
-    def receive(self):
-        """Receives a string of data from the peer
-        by reading a line from the input file handle created by the
-        connect() method.
-    
-        """
-        #? Strange workaround that does neither work
-        self.process.expect('.*')
-        rec = self.process.after
-        rec = rec.split('\r\n')
-        if rec[-2][0] == '>':
-            rec = rec[-3]
-        else:
-            rec = rec[-2]
-        #? Expects a \r\n pair even on UNIX, because this is what the
-        #? pseudo tty device returns.
-        if not rec:
-            self._eof = True
-        return rec
-
-    
     def close(self):
-        """Close transport by terminating slave process using close()."""
+        """Close transport by terminating slave process using Popen.terminate()."""
+        
         if not self.process:
             return False
         
-        self.process.close()
+        self.process.terminate()
+        self.process.wait()
         
         self.process = False
         self.closed = True
     
     def checkPeer(self):
-        """Check if slave process is still alive using proc_get_status().
+        """Check if slave process is still alive using Popen.poll().
 
         @throws gpProtocolException if the slave process is dead.
 
         """
-        #? Wie geht'n datt?
-        #? $status = proc_get_status( self.process );
-        #?
-        #? self.trace(str(self), "status", $status );
-        #? if ( !$status['running'] ) throw new gpProtocolException('slave process is not running! exit code ' . $status['exitcode'] ); 
-          
-    
-    
-
+        
+        code = self.process.poll()
+        if code is not None:
+            raise gpProtocolException('slave process is not running! exit code ' + code)
+            
 
 class Connection(object):
     """This class represents an active connection to a graph.
@@ -1069,9 +1053,9 @@ class Connection(object):
         self.response = None
         """The response from the last command call, including the status
         string and status message."""
-        self.call_handlers = ()
+        self.call_handlers = []
         """call handlers, see addCallHandler()"""
-        self.exec_handlers = ()
+        self.exec_handlers = []
         """Exec handlers, see addExecHandler()."""
         self.allowPipes = False
         """If peer-side input and output redirection should be allowed. For
@@ -1228,7 +1212,7 @@ class Connection(object):
                 #? Makes all other code shorter. Philipp.
                 msg = msg + ': ' + re.sub('\s+', ' ', str(obj_type))
                 #? Check if the substitution is really necessary!
-            print "[gpClient] " + str(context) + ": " + msg + "\n"
+            print "[gpClient] %s: %s" % (context, msg)
     
     def checkPeer(self): #? OK
         """Attempt to check if the peer is still alive."""
@@ -1265,27 +1249,32 @@ class Connection(object):
             raise gpProtocolException(
                 "Bad protocol version: expected "
                 + str(CLIENT_PROTOCOL_VERSION)
-                + ", but peer uses " + str(version) )
+                + ", but peer uses %s" % str(version) )
           
     
     def ping(self): #? ?
         """Attempt to check if the peer is still responding."""
         theVersion = self.protocol_version()
-        self._trace(str(self), theVersion)
+        self._trace(__function__(), theVersion)
         
         return theVersion
          
     
     def __getattr__(self, name): # fast OK
-        """Invoke the default method handler default_method().
+        """Creates a closure that, when called, executes the command given
+           as the attribute name on the peer instanceof graphcore resp graphserv.
 
-        Returns a colsure. That is necessary, because __getattr__ does not
-        accept arguments like a function.
-
+            Refer to the class level documentation of Connection for details
+            on how method calls are mapped to graphserv commands.
         """
+        
+        if re.search('_impl$', name):
+			raise AttributeError("no such impl: %s" % name)
+        
+        #TODO: do command name normalization outside the closure!
 
         # A closure:
-        def default_method(*arguments):
+        def exec_command(*arguments):
             """Maps calls to undeclared methods on calls to graph commands.
         
             Refer to the class level documentation of Connection for details.
@@ -1299,14 +1288,14 @@ class Connection(object):
             source = None
             sink = None
             
-            if re.search('^try-', cmd):
+            if re.match('^try-', cmd):
                 cmd = cmd[4:]
                 try_it = True
             else:
                 try_it = False
                  
             
-            if re.search( '^capture-', cmd ):
+            if re.match( '^capture-', cmd ):
                 cmd = cmd[8:]
                 sink = ArraySink()
                 capture = True
@@ -1319,22 +1308,30 @@ class Connection(object):
                     raise gpUsageException(
                       "using the _map suffix without the capture_ prefix"
                       + " is meaningless" )
-                cmd = cmd[:strlen(cmd) - 4]
+                cmd = cmd[:-4]
                 map_it = True
             else:
                 map_it = False
                  
             
             result = None
-            for handler in self.call_handlers:
-                go_on = handler(
-                  self,
-                  {'command': cmd, 'arguments': arguments,
-                   'source': source, 'sink': sink,
-                   'capture': capture, 'result': result})
-                if not go_on:   #? Check that handler returns False here!
-                    return result
-                 
+
+            if self.call_handlers:
+                handler_vars = {'command': cmd, 'arguments': arguments,
+                                'source': source, 'sink': sink,
+                                'capture': capture, 'result': result}
+                                
+                for handler in self.call_handlers:
+                    go_on = handler( self, handler_vars )
+                    if not go_on:   
+                        return handler_vars['result']
+                        
+                cmd = handler_vars['command']
+                arguments = handler_vars['arguments']
+                source = handler_vars['source']
+                sink = handler_vars['sink']
+                capture = handler_vars['capture']
+                result = handler_vars['result']
             
             command = [cmd]
     
@@ -1349,7 +1346,7 @@ class Connection(object):
                     else:
                         raise gpUsageException(
                           "arguments must be primitive or a DataSource"
-                          + " or DataSink. Found " + str(type(arg)))
+                          + " or DataSink. Found %s" % str(type(arg)))
                 elif not arg:
                     continue
                 elif isinstance(arg, (str, int)):
@@ -1357,30 +1354,39 @@ class Connection(object):
                 else:
                     raise gpUsageException(
                       "arguments must be objects, strings or integers. "
-                      + "Found " + type(arg))
+                      + "Found %s" % type(arg))
             
             try:
                 do_execute = True
                 self.__command_has_output = None
                 
-                for handler in self.exec_handlers:
-                    go_on = handler(
-                      self,
-                      {'command': command, 'source': source,
-                       'sink': sink, 'has_output': has_output,
-                       'status': status}) #? !
-                    if not go_on:
-                        do_execute = False
-                        break
+                if self.exec_handlers:
+                    handler_vars = {'command': command, 'source': source, 
+                                    'sink': sink, 'has_output': has_output,
+                                    'status': status}
+
+                    for handler in self.exec_handlers:
+                        go_on = handler( self, handler_vars )
+                        
+                        if not go_on:
+                            do_execute = False
+                            break
+                                
+                    command = handler_vars['command']
+                    source = handler_vars['source']
+                    sink = handler_vars['sink']
+                    has_output = handler_vars['has_output']
+                    status = handler_vars['status']
+
                 if do_execute:
                     func = re.sub('-', '_', command[0] + '_impl')
-                    if hasattr(Connection, func ):
+                    if hasattr(self, func ):
                         args = command[1:]
                         args.append(source)
                         args.append(sink)
                         
-                        status = func( args )
-                        #? Check das!
+                        f = getattr(self, func)
+                        status = f( *args )
                     else:
                         status = self.execute(command, source, sink)
                          
@@ -1392,9 +1398,9 @@ class Connection(object):
                 else:
                     return False
                  
-            
             #note: call modifiers like capture change the return type!
             if capture:
+                
                 if status == 'OK':
                     if self.__command_has_output:
                         if map_it:
@@ -1414,9 +1420,11 @@ class Connection(object):
                     return result # from handler
                 else:
                     return status
+                    
+        setattr(self, name, exec_command) #re-use closure!
 
         # Return the closure.
-        return default_method 
+        return exec_command 
          
     
     def execute(self, command, source=None, sink=None):
@@ -1449,57 +1457,70 @@ class Connection(object):
                 self.alloPipes influence which commands are allowed.
         
         """
-        self._trace(str(self), "BEGIN")
+        self._trace(__function__(), "BEGIN")
         
         if self.tainted:
             raise gpProtocolException(
               "connection tainted by previous error!")
+              
         if self.isClosed():
             raise gpProtocolException("connection already closed!")
+            
         if self.transport.eof(): # closed by peer
-            self._trace(str(self),
+            self._trace(__function__(),
                        "connection closed by peer, closing our side too.")
             self.close()
             self.tainted = True
             raise gpProtocolException("connection closed by peer!")
+            
         if isinstance(command, (list, tuple)):
             if not command:
                 raise gpUsageException("empty command!")
+                
             c = command[0]
-            if not isinstance(c, (str, int)): #? Less restrictive in php.
+            if not isinstance(c, (str, unicode)): #? Less restrictive in php.
                 raise gpUsageException(
-                  "invalid command type: " + type(c).__name__)
+                  "invalid command type: %s" % type(c).__name__)
+                  
             if not self.isValidCommandName(c):
-                raise gpUsageException("invalid command name: " + c)
+                raise gpUsageException("invalid command name: %s" % c)
+                
             strictArgs = self.strictArguments
             for c in command:
-                if not isinstance(c, (str, int)):
+                if not isinstance(c, (str, unicode, int)):
                     raise gpUsageException(
-                      "invalid argument type: " + type(c).__name__)
-                if self.allowPipes and re.search('^[<>]$', c):
+                      "invalid argument type: %s" % type(c).__name__)
+                      
+                if self.allowPipes and re.match('^[<>]$', c):
                     strictArgs = False
                     # pipe, allow lenient args after that
-                if self.allowPipes and re.search('^[|&!:<>]+$', c):
+                    
+                if self.allowPipes and re.match('^[|&!:<>]+$', c):
                     continue
                     #operator
+                    
                 if not self.isValidCommandArgument(c, strictArgs):
-                    raise gpUsageException("invalid argument: $c")
+                    raise gpUsageException("invalid argument: %s" % c)
             
             command = ' '.join("%s" % el for el in command)
         
-        command = command.strip()
-        if command == '':
+        if not command:
             raise gpUsageException("command is empty!")
+            
+        command = command.strip()
         
-        self._trace(str(self), "command", command )
+        if command == "":
+            raise gpUsageException("command is empty!")
+            
+        self._trace(__function__(), "command", command )
         
         if not self.isValidCommandString(command):
-            raise gpUsageException("invalid command: " + command)
+            raise gpUsageException("invalid command: %s" % command)
         
         if (not self.allowPipes) and re.search('[<>]', command):
             raise gpUsageException(
               "command denied, pipes are disallowed by allowPipes = false; "
-              + "command: " + command);
+              + "command: %s" % command);
         
         if source and (not re.search(':$', command)):
             command = command + ':'
@@ -1510,22 +1531,22 @@ class Connection(object):
         if source and re.search('<', command):
             raise gpUsageException(
               "can't use data input file and a local data source "
-              + "at the same time! " + command)
+              + "at the same time! %s" % command)
         
         if sink and re.search('>', command):
             raise gpUsageException(
               "can't use data output file and a local data sink "
-              + "at the same time! " + command)
+              + "at the same time! %s" % command)
         
-        self._trace(str(self), ">>> ", command)
+        self._trace(__function__(), ">>> ", command)
         self.transport.send( command + LINEBREAK )
-        self._trace(str(self), "source", type(source))
+        self._trace(__function__(), "source", type(source))
 
         if ( source ):
             self._copyFromSource( source )
         
         rec = self.transport.receive()
-        self._trace(str(self), "<<< ", rec)
+        self._trace(__function__(), "<<< ", rec)
 
         
         if not rec:
@@ -1534,17 +1555,17 @@ class Connection(object):
             self.statusMessage = None;
             self.response = None;
             
-            self._trace(str(self),
-                       "peer did not respond! Got value " + rec)
+            self._trace(__function__(),
+                       "peer did not respond! Got value %s" % rec)
             self.transport.checkPeer()
             
             raise gpProtocolException(
-              "peer did not respond! Got value " + str(rec))
+              "peer did not respond! Got value %s" % str(rec))
         
         rec = rec.strip()        
         self.response = rec
         
-        match = re.search('^([a-zA-Z]+)[.:!](.*?):?$', rec)
+        match = re.match('^([a-zA-Z]+)[.:!](.*?):?$', rec)
         if not match or not match.group(1):
             self.tainted = True
             self.close()
@@ -1559,21 +1580,22 @@ class Connection(object):
             raise gpProcessorException(
               self.status, self.statusMessage, command)
         
-        self._trace(str(self), "sink", type(sink))
+        self._trace(__function__(), "sink", type(sink))
         
         if re.search(': *$', rec ):
             if not sink:
                 sink = NullSink.instance
-                # note: we need to slurp the result in any case!
-                self._copyToSink(sink)
-            
-                self.__command_has_output = True
-            else:
-                self.__command_has_output = False
+                
+            # note: we need to slurp the result in any case!
+            self._copyToSink(sink)
+        
+            self.__command_has_output = True
+        else:
+            self.__command_has_output = False
              
         
         if self.transport.eof():        # closed by peer
-            self._trace(str(self),
+            self._trace(__function__(),
                        "connection closed by peer, closing our side too.")
             self.close()
         
@@ -1583,7 +1605,7 @@ class Connection(object):
     
 
     def traverse_successors_without_impl(
-      id, depth, without, without_depth, source, sink):
+      self, id, depth, without, without_depth, source, sink):
         """Implements a 'fake' command traverse-successors-without
 
         which returns all decendants of onw nodes
@@ -1602,8 +1624,8 @@ class Connection(object):
         if not without_depth:
             without_depth = depth
         return self.execute(
-          "traverse-successors " + id + " " + depth +
-          " &&! traverse-successors " + without + " " + without_depth,
+          ( "traverse-successors %s %s " +
+          " &&! traverse-successors %s %s " ) % (id, depth, without, without_depth),
           source, sink)
          
     
@@ -1614,7 +1636,11 @@ class Connection(object):
         numbers, or dashes.
     
         """
-        return re.search('^[a-zA-Z_][-\w]*$', name)
+        
+        if type(name) != str:
+            return False
+        
+        return re.match('^[a-zA-Z_][-\w]*$', name)
          
     
     def isValidCommandString(command): #static # fast OK
@@ -1624,9 +1650,17 @@ class Connection(object):
         contain any non-printable or non-ascii characters.
     
         """
-        if not re.search('^[a-zA-Z_][-\w]*($|[\s!&|<>#:])', command):
+        
+        if type(command) != str:
+            return False
+        
+        if not re.match('^[a-zA-Z_][-\w]*\s*(:?\s*$|[\s!&]+\w|[|<>#])', command):
             return False        # must start with a valid command
-        return(not re.search('[\0-\x1F\x80-\xFF]', command))
+            
+        if re.search('[\0-\x1F\x80-\xFF]', command):
+            return False        # bad characters
+
+        return True
          
     
     def isValidCommandArgument(arg, strict=True): #static #OK
@@ -1641,18 +1675,22 @@ class Connection(object):
         @param bool strict whether to perform a strict check (default: True).
     
         """
+        
         if not arg:
             return False
         
+        if not type(arg) in (str, unicode, int):
+            return False
+        
         if strict:
-            return re.search('^\w[-\w]*(:\w[-\w]*)?$', str(arg))
+            return re.match('^\w[-\w]*(:\w[-\w]*)?$', str(arg))
             #XXX: the ":" is needed for user:passwd auth. not pretty. 
         return( not re.search('[\0-\x1F\x80-\xFF:|<>!&#]', str(arg)))
             # low chars, high chars, and operators.
     
     @staticmethod
     def splitRow(s):
-        """Convert a line from a data set into a list.
+        """Convert a line from a data set into a tuple.
     
         If s is empty, this method returns False. if s starts with "#", it's
         considered to consist of a single string field. Otherwise, the
@@ -1666,12 +1704,16 @@ class Connection(object):
         if not s:
             return False
         if s[0] == '#':
-            row = [s[1:]] #? Why no conversion to int?
+            row = (s[1],) #full line string text
         else:
             row = re.split(' *[;,\t] *', s)
+            
             for i, entry in enumerate(row):
-                if re.search('^\d+$', entry):
+                if re.match('^\d+$', entry):
                     row[i] = int(entry)
+                    
+            row = tuple(row)
+            
         return row
     
     @staticmethod
@@ -1698,7 +1740,7 @@ class Connection(object):
         if isinstance(row, str):
             return '#' + row
         if len(row) == 1 and isinstance(row[0], str) and \
-          not re.search('^\d+$', row[0]):
+          not re.match('^\d+$', row[0]):
             return '#' + row[0]
         try:
             s = ','.join("%s" % el for el in row)
@@ -1724,11 +1766,11 @@ class Connection(object):
         
         """
         sink = self.transport.make_sink()
-        self._trace(str(self), "source", type(source))
+        self._trace(__function__(), "source", type(source))
         self.copy(source, sink, ' > ')
         # source.close()        # to close or not to close...
         self.transport.send( LINEBREAK )     #XXX: flush again??
-        self._trace(str(self), "copy complete.")
+        self._trace(__function__(), "copy complete.")
         
         # #
         # while ( $row = $source->nextRow() )  
@@ -1759,9 +1801,9 @@ class Connection(object):
         
         """
         source = self.transport.make_source()
-        self._trace(str(self), "sink", type(sink))
+        self._trace(__function__(), "sink", type(sink))
         self.copy(source, sink, ' < ' )
-        self._trace(str(self), "copy complete.")
+        self._trace(__function__(), "copy complete.")
         # $source->close();     # to close or not to close...
         
         # #
@@ -1848,9 +1890,6 @@ class Connection(object):
     isValidCommandArgument = staticmethod(isValidCommandArgument)
 
 
-
-
-
 def array_column(a, col):
     """Extracts a column from a tabular structure
  
@@ -1866,9 +1905,8 @@ def array_column(a, col):
     """
     column = []
     
-    for k in a:
-        column[k] = a[k][col]
-         
+    for r in a:
+        column.append( r[col] )
     
     return column
 
@@ -1887,11 +1925,13 @@ def pairs2map( pairs, key_col=0, value_col=1):
     @return: the key value pairs in pairs.
 
     """
-    Map = []
+    
+    m = {}
     for p in pairs:
         k = p[key_col]
-        Map[ k ] = p[value_col]
-    return Map
+        m[ k ] = p[value_col]
+        
+    return m
      
 def escapeshellcmd(command):
     return '"%s"' % (

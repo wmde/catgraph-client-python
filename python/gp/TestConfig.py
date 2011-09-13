@@ -1,7 +1,7 @@
 import Client
 
 #graphcore binary for slave tests
-TestGraphCorePath = '/home/philipp/Computer/GraphCore/graphserv/graphcore/graphcore';
+TestGraphCorePath = '/home/daniel/src/graphserv/graphcore/graphcore';
 
 #graphserv coordinates for client tests
 TestGraphServHost = 'localhost';

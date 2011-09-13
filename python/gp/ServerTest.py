@@ -2,17 +2,16 @@
 # -*- coding: utf-8
 
 import unittest
-from TestBase import ClientTestBase
 import os
 import tempfile
-from TestConfig import *
-from Client import gpException, gpProcessorException, array_column
+from TestBase import *
+from Client import *
 
 TestGraphName = 'test' + str(os.getpid())
 TestFilePrefix = '/tmp/gptest-' + str(os.getpid())
 
 
-class ServerTest (ClientTestBase):
+class ServerTest (ClientTestBase, unittest.TestCase):
     """Test server functions via client lib."""
 
     def test_createGraph(self):
@@ -127,7 +126,7 @@ class ServerTest (ClientTestBase):
         gp2 = self.newConnection()
         graphs = gp2.capture_list_graphs()
         graphs = array_column(graphs, 0)
-        self.assertTrue( in_(TestGraphName, graphs),
+        self.assertTrue( TestGraphName in graphs,
           "test table TestGraphName should be in the list" )
 
         self.gp.drop_graph(TestGraphName)
@@ -138,10 +137,10 @@ class ServerTest (ClientTestBase):
 
         #print "graphs: " . var_export($graphs, true) . "\n"
 
-        #print "containes: " . var_export(gpConnectionTestBase::setContains( $graphs, TestGraphName ), true) . "\n"
+        #print "containes: " . var_export(ConnectionTestBase::setContains( $graphs, TestGraphName ), true) . "\n"
 
         self.assertFalse(
-          gpConnectionTestBase.setContains(graphs, TestGraphName),
+          ConnectionTestBase.setContains(graphs, TestGraphName),
           "test table TestGraphName should no longer be in the list" )
 
     def test_shutdown(self):
@@ -195,13 +194,13 @@ class ServerTest (ClientTestBase):
 
         gp2.stats()
         self.assertEquals( 'OK', gp2.getStatus(),
-          'connection should still be usable by others after quit.' )
+          'connection should still be usable by others after quit; response: %s' % gp2.getResponse() )
         gp2.close()
 
         gp3 = self.newConnection()
         gp3.use_graph(TestGraphName)
         self.assertEquals( 'OK', gp3.getStatus(),
-          'graph should still be available to others after quit.' )
+          'graph should still be available to others after quit; response: %s' % gp2.getResponse() )
         gp3.close()
 
 
@@ -230,7 +229,7 @@ class ServerTest (ClientTestBase):
         # re-authenticate
         ok = gp.create_graph(name)
         self.assertEquals( ok, 'OK',
-          "should be able to create graph with admin privileges" )
+          "should be able to create graph with admin privileges; response: %s" % gp.getResponse() )
 
         gp.try_drop_graph(name)
         # cleanup
@@ -259,7 +258,7 @@ class ServerTest (ClientTestBase):
         # re-authenticate
         ok = gp.drop_graph(name)
         self.assertEquals( ok, 'OK',
-          "should be able to drop graph with admin privileges" )
+          "should be able to drop graph with admin privileges; response: %s" % gp.getResponse() )
 
     def test_inputPipingPrivilege(self):
         global TestGraphName, TestGraphServHost
@@ -271,7 +270,7 @@ class ServerTest (ClientTestBase):
         if TestGraphServHost != 'localhost':
             return None
 
-        f = os.path.dirname(__file__) + '/gp.test.data'
+        f = os.path.dirname(os.path.abspath(__file__)) + '/gp.test.data'
 
         gp = self.newConnection()
         gp.use_graph(TestGraphName)
@@ -294,7 +293,7 @@ class ServerTest (ClientTestBase):
         # re-authenticate
         ok = gp.execute("add-arcs < " + f)
         self.assertEquals( ok, 'OK',
-          "should be able to pipe with admin privileges" )
+          "should be able to pipe with admin privileges; response: %s" % gp.getResponse() )
 
 
     def test_outputPipingPrivilege(self):
@@ -307,7 +306,7 @@ class ServerTest (ClientTestBase):
         if TestGraphServHost != 'localhost':
             return None
 
-        f = os.tempnam(tempfile.gettempdir(), 'gpt')
+        f = tempfile.mktemp(suffix='gpt')
 
         gp = self.newConnection()
         gp.use_graph(TestGraphName)
@@ -327,7 +326,7 @@ class ServerTest (ClientTestBase):
         # re-authenticate
         ok = gp.execute("list-roots > " + f)
         self.assertEquals(
-          ok, 'OK', "should be able to pipe with admin privileges" )
+          ok, 'OK', "should be able to pipe with admin privileges; response: %s" % gp.getResponse() )
 
         try:
             unlink(f)
@@ -352,7 +351,7 @@ class ServerTest (ClientTestBase):
           TestMaster + ":" + TestMasterPassword)
         ok = gp.try_add_arcs(((1, 11 ), (1, 12 ) ) )
         self.assertEquals( 'OK', ok,
-          "should be able to add arcs with updater privileges" )
+          "should be able to add arcs with updater privileges; response: %s" % gp.getResponse() )
 
     def test_removeArcsPrivilege(self):
         global TestGraphName
@@ -364,7 +363,7 @@ class ServerTest (ClientTestBase):
         gp = self.newConnection()
         gp.use_graph(TestGraphName)
 
-        ok = gp.try_remove_arcs(((1, 11 ) ) )
+        ok = gp.try_remove_arcs(((1, 11 ), ) )
         self.assertFalse( ok,
           "should not be able to delete arcs without authorizing" )
         self.assertEquals( 'DENIED', gp.getStatus(),
@@ -372,9 +371,10 @@ class ServerTest (ClientTestBase):
 
         gp.authorize('password',
           TestMaster + ":" + TestMasterPassword)
-        ok = gp.try_remove_arcs(((1, 11 ) ) )
+          
+        ok = gp.try_remove_arcs(((1, 11 ), ) )
         self.assertEquals( 'OK', ok,
-          "should be able to delete arcs with updater privileges" )
+          "should be able to delete arcs with updater privileges; response: %s" % gp.getResponse() )
 
     def test_replaceSuccessorsPrivilege(self):
         global TestGraphName
@@ -386,7 +386,7 @@ class ServerTest (ClientTestBase):
         gp = self.newConnection()
         gp.use_graph(TestGraphName)
 
-        ok = gp.try_replace_successors( 1, (17 ) )
+        ok = gp.try_replace_successors( 1, (17, ) )
         self.assertFalse( ok,
           "should not be able to replace arcs without authorizing" )
         self.assertEquals( 'DENIED', gp.getStatus(),
@@ -394,9 +394,9 @@ class ServerTest (ClientTestBase):
 
         gp.authorize('password',
           TestMaster + ":" + TestMasterPassword)
-        ok = gp.try_replace_successors( 1, (17 ) )
+        ok = gp.try_replace_successors( 1, (17, ) )
         self.assertEquals( 'OK', ok,
-          "should be able to replace arcs with updater privileges" )
+          "should be able to replace arcs with updater privileges; response: %s" % gp.getResponse() )
 
     def test_replacePredecessorsPrivilege(self):
         global TestGraphName
@@ -408,7 +408,7 @@ class ServerTest (ClientTestBase):
         gp = self.newConnection()
         gp.use_graph(TestGraphName)
 
-        ok = gp.try_replace_predecessors( 1, (17 ) )
+        ok = gp.try_replace_predecessors( 1, (17, ) )
         self.assertFalse( ok,
           "should not be able to replace arcs without authorizing" )
         self.assertEquals( 'DENIED', gp.getStatus(),
@@ -416,9 +416,9 @@ class ServerTest (ClientTestBase):
 
         gp.authorize('password',
           TestMaster + ":" + TestMasterPassword)
-        ok = gp.try_replace_predecessors( 1, (17 ) )
+        ok = gp.try_replace_predecessors( 1, (17, ) )
         self.assertEquals( 'OK', ok,
-          "should be able to replace arcs with updater privileges" )
+          "should be able to replace arcs with updater privileges; response: %s" % gp.getResponse() )
 
     def testClearPrivilege(self):
         global TestGraphName
