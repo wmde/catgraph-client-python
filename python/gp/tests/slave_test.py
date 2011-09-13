@@ -270,7 +270,7 @@ class SlaveTest (SlaveTestBase, unittest.TestCase):
          
     
     # // Client Lib I/O ///////////////////////////////////////////////////////////////
-    # Tested here, not in gpConnectionTestBase, because we only need to test is once, not for every type of connection
+    # Tested here, not in ConnectionTestBase, because we only need to test is once, not for every type of connection
     # Note: ArraySource and ArraySink are used implicitly all the time in the tests, no need to test them separately.
     
     def test_fileSource(self):

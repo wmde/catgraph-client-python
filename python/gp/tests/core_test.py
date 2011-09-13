@@ -8,7 +8,7 @@ from test_base import *
 from test_config import *
 from gp.client import *
  
-class gpCoreTest (SlaveTestBase, unittest.TestCase):
+class CoreTest (SlaveTestBase, unittest.TestCase):
     """
         Tests core functions via client lib
     """
