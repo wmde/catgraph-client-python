@@ -1,0 +1,1921 @@
+"""Graph Processor Client Library by Daniel Kinzler
+Translated from PHP to Python by Philipp Zedler
+Copyright (c) 2011 by Wikimedia Deutschland e.V.
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+  * Redistributions of source code must retain the above copyright
+    notice, this list of conditions and the following disclaimer.
+  * Redistributions in binary form must reproduce the above copyright
+    notice, this list of conditions and the following disclaimer in the
+    documentation and/or other materials provided with the distribution.
+  * Neither the name of Wikimedia Deutschland nor the
+    names of its contributors may be used to endorse or promote products
+    derived from this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY WIKIMEDIA DEUTSCHLAND ''AS IS'' AND ANY
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL WIKIMEDIA DEUTSCHLAND BE LIABLE FOR ANY
+DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+
+NOTE: This software is not released as a product. It was written primarily for
+Wikimedia Deutschland's own use, and is made public as is, in the hope it may
+be useful. Wikimedia Deutschland may at any time discontinue developing or
+supporting this software. There is no guarantee any new versions or even fixes
+for security issues will be released.
+
+This version of the Graph Processor Client Library
+is a Python interface to a GraphServ or GraphCore instance. 
+
+@author    Daniel Kinzler <daniel.kinzler@wikimedia.de>
+@author    Philipp Zedler <zedler@itp.tu-berlin.de> (translation)
+@copyright 2011, Wikimedia Deutschland
+
+@package   WikiTalk #? Stimmt das?
+
+"""
+
+import re
+import os
+import socket
+import time
+import pexpect
+
+
+# __package__ = "gp"?
+
+LINEBREAK = "\r\n"
+"""Linebreak to use when talking to GraphServ or GraphCore instances.
+   This is \\r\\n per spec. but \\n alone should also work."""
+
+PORT = 6666
+"""Default GraphServ port"""
+
+CLIENT_PROTOCOL_VERSION = 2
+"""Expected GraphServ protocol version. If GraphServ (resp. GraphCore)
+   reports a different protocol version, the conenction will be aborted."""
+
+
+
+
+class gpException(Exception):
+    """Base class for exceptions in this module."""
+    def __init__(self, msg):
+        """
+        @param msg: the message to be displayed in case of an exception
+        """
+        self.msg = msg
+
+    def __str__(self):
+        """Determine that self.msg will appear in the error message."""
+        return self.msg
+
+
+class gpProcessorException(gpException):
+    """Exceptions for errors reported by the remote grap database"""
+    def __init__(self, status, msg, command=False ):
+        if command:
+            msg = msg + " Command was " + command
+        gpException.__init__(self, msg)
+        self.command = command
+        self.status = status
+        #? self.status wird nirgendwo ausgegeben.
+
+
+class gpProtocolException(gpException):
+    """Exception for the communication with the remote graph database."""
+    pass
+
+
+class gpClientException( gpException ):
+    """Exception when gpClient encounters a problem on the client side."""
+    pass
+
+
+class gpUsageException( gpClientException ):
+    """Exception raised when gpClient is used incorrectly."""
+    pass
+
+
+
+
+
+class DataSource (object):
+    """Represents an interator of rows in a tabular data set.
+
+    Data sources are used in the gpClient framework to represent origin of
+    a data transfer. Typically, a data source is used to provide data to a
+    GraphCore command, such as add_arcs. Derived classes must implement the
+    next() method, which returns one row of data after another.
+
+    """
+    def __iter__(self):
+        """Return the iterator object. Required for the iterator protocol."""
+        return self
+
+    def next( self ):
+        """Returns the next row.
+
+        The row is represented as an indexed array. Successive calls on the
+        same data source should return rows of the same size, with the same
+        array keys.
+        @return an array representing the next row.
+    
+        """
+        raise NotImplementedError( "`next()' called in abstract class." )
+    
+    def close( self ):
+        """ Close the data source and free resources allocated by this object.
+
+        close() should always be called when a data source is no longer
+        needed, usually on the same level as the data source object was
+        created. After close() has been called on a data source object,
+        the behavior of calling nextRow() on that object is undefined.
+    
+        """
+        pass    # noop
+
+
+class NullSource( DataSource ):
+    """An empty data source."""
+    
+    def next( self ):
+        """Stop the iteration."""
+        raise StopIteration()
+    
+    instance = None
+    """kind of singleton instance of NullSource"""
+
+NullSource.instance = NullSource()
+"""A global variable of the module containing a NullSource instance.
+
+It hould be used in order to avoid the costs of crating new instaces
+which are not necessary for this class.
+
+"""
+
+
+class ArraySource( DataSource ):
+    """A data source that iterates over an array.
+
+    This is useful to use programmatically generated data as the input
+    to some GraphCore command.
+
+    The ArraySource maintains a current index pointing into the data
+    array. Every call to next() increments that index to the next row.
+
+    """
+
+    def __init__( self, data ):  
+        """ Initializes a ArraySource from the table contained in data.
+   
+        @param data: an array of indexed arrays, each representing a
+               row in the data source.
+
+        """
+        self.data = data
+        self.data_length = len(data)
+        self.index = 0
+         
+    def next( self ):
+        """Return the next row of the array provided to the constructor."""
+        if self.index < self.data_length:
+            row = self.data[self.index]
+            self.index = self.index + 1
+            if not isinstance(row, (list,tuple)):
+                row = [row]
+            return row
+        else:
+            raise StopIteration()
+ 
+    def makeSink(self):
+        """Returns a new instance of ArraySink.
+
+        The sink can be used to write to and to fill the data array of
+        this ArraySource.
+   
+        """ 
+        return ArraySink(self.data)
+     
+
+class PipeSource( DataSource ):
+    """Data source based on a file handle.
+
+    Each line read from the file handle is interpreted as (and converted
+    to) a data row.
+    Note: calling close() on a PipeSource does *not* close the
+    underlying file handle. The idea is that the handle should be closed
+    by the same code that also opened the file.
+
+    """
+    def __init__( self, hin ):
+        """Initializes a new PipeSource
+    
+        @param resource hin a handle of an open file that allows read
+        access, as returned by file() or ... #? translate fsockopen()!
+    
+        """
+        self.hin = hin
+        
+    def next(self):
+        """Returns the next line from the file handle (using readline).
+
+        The line is split using Connection.splitRow() and the result is
+        returned as the next row.
+   
+        @return array the next data row, extracted from the next line
+                read from the file handle.
+   
+        """ 
+        s = self.hin.readline()
+        s = s.strip()
+        if s:
+            row = Connection.splitRow( s )
+            return row
+        else:
+            raise StopIteration()
+
+
+class FileSource( PipeSource ):
+    """Data source based on reading from a file.
+
+    Extends PipeSource to handle an actual local file.
+ 
+    Note: calling close() on a FileSource *does* close the
+    underlying file handle. The idea is that the handle should be closed
+    by the same code that also opened the file.
+
+    """    
+    def __init__(self, path, mode='r'):
+        """Creates a data source for reading from the given file.
+
+        The file is opened using file(path, mode).
+    
+        @param string path the path of the file to read from
+        @param string mode (default: 'r') the mode with which the file
+               should be opened.
+        @throws gpClientException if file() failed to open the file
+                given by path.
+    
+        """
+        self.mode = mode
+        self.path = path
+        
+        try:
+            handle = file( self.path, self.mode )
+        except IOError:
+            raise gpClientException( "failed to open " . self.path )
+        PipeSource.__init__(self, handle)
+         
+    def close(self):  
+        """Close the file handle."""
+        self.hin.close()
+         
+     
+
+
+
+class DataSink(object): #abstract
+    """Abstract base class for "data sinks".
+
+    The gpClient framework uses data sink objects to represent the
+    endpoint of a data transfer. That is, a data sink accepts one row
+    of tabular data after another, and handles them in some way.
+    How the row is processed is specific to the concrete implementation. 
+    
+    """
+    def putRow(self, row):
+        raise NotImplementedError( "`putRow()' called in abstract class" )
+    
+    def flush(self):
+        """Write buffered data.
+
+        In case any output has been buffered (or some other kind of
+        action has been deferred), it should be written now (resp.
+        deferred actions should be performed and made permanent).
+    
+        The default implementation of this method does nothing. Any
+        subclass that applies any kind of buffereing to the output
+        should override it to make all pending changes permanent.
+    
+        """
+        raise NotImplementedError( "`flush()' called in abstract class" )
+    
+    def close(self):
+        """Close this data output and releases allocated resources.
+
+        The behavior of calls to putRow() is undefined after close()
+        was called on the same object.
+    
+        The default implementation of this method calls flush(). Any
+        subclass that allocates any external resources should override
+        this method to release those resources.
+   
+        """ 
+        raise NotImplementedError( "`close()' called in abstract class" )
+         
+     
+class NullSink( DataSink ):
+    """A data sink that simply ignores all incoming data."""
+        
+    def putRow(self, row):
+        pass
+        
+    def flush(self):
+        pass
+
+    instance = None
+
+NullSink.instance = NullSink()
+"""A global variable of the module containing a NullSink instance.
+
+It hould be used in order to avoid the costs of crating new instaces
+which are not necessary for this class.
+
+"""
+
+class ArraySink(DataSink):
+    """A data sink that appends each row to a data array.
+
+    This is typically used to make the data returned from a GraphCore
+    command available for programmatic processing. It should however not
+    be used in situations where large amounts of data are expected to be
+    returned.
+
+    """
+    def __init__(self, data=[]):     #? data war Zeiger!
+        """Initializes a new ArraySink.
+    
+        @param array data (optional) an array the rows
+               should be appended to. If not given, a new array will be
+               created, and can be accessed using the getData() method.
+    
+        """
+        self.data = data
+         
+    def putRow(self, row):
+        """Appends the given row to the table maintained by this ArraySink.
+
+        The data can be accessed using the getData() method.
+
+        """
+        self.data.append(row)
+         
+    def getData(self):
+        """Returns the array that contains this ArraySink's tabular data.
+
+        This method is typically used to access the data collected by this
+        data sink.
+    
+        """
+        return self.data
+         
+    def makeSource(self):
+        """Return a new instance of ArraySource.
+
+        It may be used to read the rows from the array of tabular data
+        maintained by this ArraySink.
+    
+        """
+        return ArraySource(self.data)
+         
+    def getMap(self):
+        """Return the maintained tabular data as an associative array.
+
+        This only works for two column data, where each column is
+        interpreted as a pair of key and value. The first column is
+        used as the key and the second column is used as the value.
+     
+        @rtype:  dictionary
+        @return: an associative array created under the assumption
+                 that the tabular data in this ArraySink consists of
+                 key value pairs.
+
+        """
+        return pairs2map(self.data)
+
+
+class PipeSink (DataSink):
+    """Data sink based on a file handle.
+
+    Each data row is written as a line to the file handle.
+
+    Note: calling close() on a PipeSink does *not* close the
+    underlying file handle. The idea is that the handle should be closed
+    by the same code that also opened the file.
+
+    """
+    
+    def __init__(self, hout, linebreak=None):
+        """Initializes a new pipe sink with the given file handle.
+
+        @param resource $hout a file handle that can be written to, such as 
+               returned by fopen or fsockopen.
+        @param string $linebreak character(s) to use to separate rows in the
+               output (default: LINEBREAK)
+    
+        """
+        if not linebreak:
+            linebreak = LINEBREAK
+        self.hout = hout
+        self.linebreak = linebreak
+         
+    def putRow(self, row):
+        """Writes the given data row to the file handle.
+
+        Connection.joinRow() is used to encode the data row into a
+        line of text. PipeTransport.send_to() is used to write the
+        line to the file handle.
+     
+        Note that the rows passed to successive calls to putRow() should
+        have the same number of fields and use the same array keys.
+     
+        @type row:  list/tuple of int/str types
+        @param row: representation of a data row.
+    
+        """
+        s = Connection.joinRow(row)
+        PipeTransport.send_to(self.hout, s + self.linebreak)
+         
+    def flush(self):
+        """Flushes any pending data on the file handle (using fflush)."""
+        self.hout.flush()
+         
+     
+class FileSink (PipeSink):
+    """Data sink based on writing to a file.
+
+    Extends PipeSink to handle an actual local file.
+
+    Note: calling close() on a FileSink *does* close the underlying
+    file handle. The idea is that the handle should be closed by the
+    same code that also opened the file.
+
+    """
+    
+    def __init__(self, path, append=False, linebreak=None):
+        """Creates a new FileSink around the given file.
+
+        The file given by path is opened using file().
+     
+        @param string path the path to the local file to write to.
+        @param boolean append whether to append to the file, or override it
+        @param string linebreak character(s) to use to separate lines in the
+               resulting file (default: os.linesep)
+        @throws gpClientException if the file could not be opened.
+    
+        """
+        if append == True:
+            self.mode = 'a'
+        elif append == False:
+            self.mode = 'w'
+        else:
+            self.mode = append
+        if not linebreak:
+            linebreak = os.linesep
+        self.path = path
+        try:
+            h = file(self.path, self.mode)
+        except Error:
+            raise gpClientException( "failed to open " + self.path )
+        PipeSink.__init__(self, h, linebreak )
+         
+    def close(self):
+        """closes the file handle (after flushing it)."""
+        PipeSink.close()
+        self.hout.close()
+
+
+
+
+
+class Transport(object): # abstract
+    """Abstract base class of all transports used by the gpClient framework.
+
+    A transport abstracts the way the framework communicates with the
+    remote peer (i.e. the instance of GraphServ resp. GrahCore). It
+    also implements to logic to connect to the remote instance.
+
+    """
+
+    def __init__(self, *otherArguments):
+        """The constructor."""
+        self.closed = False
+        self.debug = False
+        self._eof = False
+    
+    def trace(self, context, msg, obj='nothing878423really'):
+        """Trace an error."""
+        if ( self.debug ):
+            if obj != 'nothing878423really':
+                msg = msg + ': ' + re.sub('\s+', ' ', obj)
+            print "[Transport] " + context + ": " + msg + "\n"
+    
+    def isClosed(self):
+        """Return True if this Transport is closed, e.g. with close()"""
+        return self.closed
+    
+    def close(self):
+        """Closes this Transport
+
+        Disconnect from the peer and free any resources that this object
+        may have allocated. After close() has been called, isClosed()
+        must always return True when called on the same object.
+        The default implementation just marks this object as closed.
+    
+        """
+        self.closed = True
+         
+    def connect(self):
+        """Connects this gptransport to its peer.
+
+        Its peer is the remote instance of GraphServ resp. graphCore.
+        The information required to connect is typically provided to the
+        constructor of the respective subclass.
+
+        """
+        raise NotImplementedError("`connect()' called in abstract class.")
+    
+    def send(self, s):
+        """Sends a string to the peer.
+
+        This is the an operation of the line based communication protocol.
+    
+        """
+        raise NotImplementedError("`send()' called in abstract class.")
+    
+    def receive(self):
+        """Receives a string from the peer.
+
+        This is the a operation of the line based communication protocol.
+
+        """
+        raise NotImplementedError("`receive()' called in abstract class.")
+    
+    def eof(self):
+        """True after detection of end of data stream from the peer"""
+        return self._eof
+    
+    def make_source(self):
+        """Creates an instance of DataSource
+
+        for reading data from the current position in the data stream
+        coming from the peer.
+    
+        """
+        raise NotImplementedError("`make_source()' called in abstract class.")
+    
+    def make_sink(self):
+        """Create an instance of DataSink
+
+        for writing data to the data stream going to the peer.
+    
+        """
+        raise NotImplementedError("`make_sink()' called in abstract class.")
+ 
+    def checkPeer(self): 
+        """Attempts to check if the peer is still responding. 
+
+        A static function.
+        The default implementation does nothing.
+
+        """
+        pass   # noop
+          
+    def setDebug(self,debug):
+        """Sets the debug mode on this transport object.
+
+        When debugging is enabled, details about all data send or
+        received is deumpted to stdout. 
+    
+        """
+        self.debug = debug
+
+
+class PipeTransport(Transport): # abstract
+    """Abstract base for file handle based implementations of Transport."""
+
+    def __init__(self):
+        self.hout = None
+        self.hin = None
+        Transport.__init__(self)
+    
+    @staticmethod
+    def send_to(hout, s):
+        """Utility function for sending data to a file handle.
+
+        This is essentially a wrapper around file.write(), which makes sure
+        that s is written in its entirety. After s was written out using
+        file.write(), file.flush() is called to commit all data to the peer.
+
+        @param resource hout: the file handle to write to
+        @param string s: the data to write
+        @raise gpProtocolException if writing fails.
+    
+        """
+        #? length = len(s)
+        try:
+            hout.write(s)
+            hout.flush()            # try to write the buffer
+            #os.fsync(hout.fileno()) # ensure that the whole buffer is written
+            # This seems not to work for a socket.makefile().
+            #? return length #? no more necessary!
+        except IOError:
+            raise gpClientException(
+              "failed to send data to peer, broken pipe! "
+              + "(Writing to the file failed.)")
+        except:
+            print( "failed to send data to peer, broken pipe! "
+              + "(A strange error occured.)")
+            raise
+         
+    def send(self, s):
+        """Sends the given data string to the peer
+
+        by writing it to the output file handle created by the connect()
+        method. Uses PipeTransport.send_to() to send the data.
+    
+        """
+        return PipeTransport.send_to(self.hout, s)
+    
+    def receive(self):
+        """Receives a string of data from the peer
+        by reading a line from the input file handle created by the
+        connect() method. Uses readline to send the data. 
+    
+        @todo: remove hardcoded limit of 1024 bytes per line!
+        #? Here any problem?
+    
+        """
+        re = self.hin.readline()
+        if not re:
+            self._eof = True
+        return re
+
+    def setTimeout(self, seconds):
+        """Sets a read timeout on input file handle
+    
+        which is created by the connect() method.
+    
+        """
+        self.hin.settimeout(seconds)
+
+    def make_source(self):
+        """Returns a new instance of PipeSource
+
+        and this reads from the input file handle created by the
+        connect method().
+    
+        """
+        return PipeSource( self.hin )
+         
+    def make_sink(self):
+        """Returns a new instance of PipeSink
+
+        that writes to the output file handle created by the connect method().
+   
+        """ 
+        return PipeSink(self.hout)
+
+
+class ClientTransport(PipeTransport):
+    """Communicate with a remote instance of GraphServ over TCP.
+
+    An implementation of PipeTransport.
+    @var host
+    @var port
+    @var graphname
+    @var socket = False
+    """
+    
+    def __init__(self, graphname, host='localhost', port=PORT): #OK
+        """Initialize a new instance of ClientTransport.
+
+        Responsable for a connection with GraphServ.
+
+        @param string graphname the name of the graph to connect to
+        @param string host (default: 'localhost') the host the GraphServ
+               process is located at
+        @param int port (default: PORT) the TCP port the GraphServ
+               process is listening at
+    
+        """
+        self.port = port
+        self.host = host
+        self.graphname = graphname
+        self.socket = False
+        PipeTransport.__init__(self)
+         
+    def connect(self):
+        """Connects to a remote instance of GraphServ
+
+        using the host and port provided top the constructor.
+        If the connection could be established, opens the graph
+        specified to the constructor.
+        B{#? In PHP werden hier noch $errno und $errstr uebergeben. Philipp.}
+     
+        @throws gpProtocolException if the connection failed or another
+                communication error ocurred.
+    
+        """
+        self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            self.socket.connect((self.host, self.port))
+            #XXX: configure timeout?
+        except socket.error as (value, message):
+            raise gpProtocolException(
+              "failed to connect to " + self.host + ":"
+              + str(self.port) + ': ' + str(value) + ' ' + message )
+        
+        self.hin = self.socket.makefile()
+        self.hout = self.socket.makefile()
+        
+        if self.graphname:
+            try:
+                self.use_graph(self.graphname)
+            except Exception, e:
+                self.close()
+                raise e
+        
+        return True
+         
+    def close(self):
+        """Closes the transport.
+
+        Disconnect the TCP socket to the remote GraphServ instance (using
+        fclose). Subsequent calls to close() have no further effect.
+        @throws gpProtocolException if the connection failed or another
+        communication error ocurred.
+    
+        """
+        if not self.socket:
+            return False
+        
+        self.socket.close()
+        self.closed = True
+     
+
+class SlaveTransport(PipeTransport): #? Does not work!
+    """A transport implementation for communicating
+
+    with a GraphCore instance running in a local child process (i.e. as
+    a slave to the current PHP script).
+    
+    @var process
+    @var command
+
+    """
+    
+    def __init__(self, command, cwd=None, env=None):
+        """Initialize a new instance of SlaveTransport.
+
+        Launch a slave instance of GraphCore.
+     
+        @param mixed command the command line to start GraphCore.
+               May be given as a string or as an array. If given as a
+               string, all parameters must be duely escaped #?. If given as
+               an array, command[0] must be the path to the GraphCore
+               executable. See Slavetransport.makeCommand() for more
+               details.
+        @param string cwd (default: None) the working dir to run the
+               slave process in. Defaults to the current working 
+               directory. #? Check!
+        @param int $env (default: null) the environment variables to
+               pass to the slave process. Defaults to inheriting the PHP
+               script's environment.
+    
+        """
+        self.command = command
+        self.cwd = cwd
+        self.env = env
+        Transport.__init__(self)
+    
+    @staticmethod
+    def makeCommand(command):
+        """Utility function for creating a valid command line.
+        
+        It is called before executing a program as a child process.
+     
+        @type command:  str or list or tuple
+        @param command: the command, including the executable and any
+               parameters. If given as a string, all parameters must be
+               duely escaped. #? If given as an array, command[0] must be
+               the path to an executable.
+        @rtype:  str
+        @return: A valid command line. The first part of
+                 the command is the executable, any following parts are
+                 passed as arguments to the executable.
+        @raise: gpClientException if the command did not point to a readable,
+                executable file.
+    
+        """
+        if not command:
+            raise Exception('empty command given')
+        
+        path = None
+        if isinstance(command, (list, tuple)):
+            for i in command:
+                if i == 0:
+                    cmd = command[i]
+                    # In the php-Version, escapeshellcmd is called here.
+                    # Python claims to handle arguments securely.
+                    path = command[i]
+                else:
+                    cmd = cmd + ' ' + str(command[i])
+                    # Here the same with escapeshellarg
+        else:
+            m = re.search(
+              '!^ *([-_a-zA-Z0-9.\\\\/]+)( [^"\'|<>]$|$)!', command)
+            if m:
+                path = m.group(1)
+            cmd = command.strip()
+             
+        
+        if path:
+            if not os.path.exists(path):
+                raise gpClientException('file does not exist: ' + path)
+            if not os.access(path, os.R_OK):
+                raise gpClientException('file is not readable: ' + path)
+            if not os.access(path, os.X_OK):
+                raise gpClientException('file is not executable: ' + path)
+        
+        return cmd
+    
+    def connect(self):
+        """Connects to the slave instance of GraphCore
+
+        launched using the command provided to the constructor.
+        proc_open() is used to launch the child process.
+     
+        @throws gpClientException if the command executable could not be found.
+        @throws gpProtocolException if the child process could not be launched.
+     
+        @todo handle output to stderr!
+        @todo get rid of the "wait 1/10 of a second and check" hack
+    
+        """
+        cmd = self.makeCommand(self.command)
+        try:
+			pexpect.spawn(cmd,cwd=self.cwd,env=self.env) 
+            # pty.spawn(cmd, self.hin, self.hout)
+        except Exception as ex:
+            self.trace(str(self), "failed to execute " + str(self.command))
+            raise gpProtocolException("failed to execute " + str(self.command))
+        
+        self.trace(str(self), "executing command "
+          + str(self.command) + " as " + str(self.process))
+                
+        self.trace(str(self), "reading from " + str(self.hin))
+        self.trace(str(self), "writing to " + str(self.hout))
+        
+        time.sleep(0.1)
+        # XXX: NASTY HACK!
+        # wait 1/10th of a second to see if the command actually starts
+        
+        return True
+
+    @staticmethod
+    def send_to(a,b):
+        raise NotImplementdError(
+          "send_to should not be called for a SlaveTransport object.")
+    
+    def send(self, s):
+        """Send a line of data to the file handle.
+
+        @type s:  string
+        @param s: the data to write
+        @raise gpProtocolException if writing fails.
+    
+        """
+        try:
+            self.process.sendline(s)
+        except Exception as ex:
+            raise gpProtocolException(
+              "failed to send data to peer, broken pipe! "
+              + "(Writing to the file failed.\nOriginal error:"
+              + str(ex))
+              
+    def receive(self):
+        """Receives a string of data from the peer
+        by reading a line from the input file handle created by the
+        connect() method.
+    
+        """
+        #? Strange workaround that does neither work
+        self.process.expect('.*')
+        rec = self.process.after
+        rec = rec.split('\r\n')
+        if rec[-2][0] == '>':
+            rec = rec[-3]
+        else:
+            rec = rec[-2]
+        #? Expects a \r\n pair even on UNIX, because this is what the
+        #? pseudo tty device returns.
+        if not rec:
+            self._eof = True
+        return rec
+
+    
+    def close(self):
+        """Close transport by terminating slave process using close()."""
+        if not self.process:
+            return False
+        
+        self.process.close()
+        
+        self.process = False
+        self.closed = True
+    
+    def checkPeer(self):
+        """Check if slave process is still alive using proc_get_status().
+
+        @throws gpProtocolException if the slave process is dead.
+
+        """
+        #? Wie geht'n datt?
+        #? $status = proc_get_status( self.process );
+        #?
+        #? self.trace(str(self), "status", $status );
+        #? if ( !$status['running'] ) throw new gpProtocolException('slave process is not running! exit code ' . $status['exitcode'] ); 
+          
+    
+    
+
+
+class Connection(object):
+    """This class represents an active connection to a graph.
+
+    It can be seen
+    as the local interface to the graph that allows the graph to be
+    queried and manipulated, using the command set specified for GraphCore
+    and GraphServ. The communication with the peer process that manages
+    the actual graph (a slave GraphCore instance or a remote GraphCore
+    server) is performed by an instance of the appropriate subclass of
+    Transport.
+    
+    Instances of Connection that use the appropriate transport can be
+    created conveniently using the static factory methods called
+    new_xxx_connection.
+    
+    Besides some methods for managing the connection and some utility
+    functions, Connection exposes the GraphCore and GraphServ command
+    sets. The commands are exposed as "virtual" methods: they are not
+    implemented explicitely, instead, the __getattr__() method is used to map
+    method calls to GraphCore commands. No local checks are performed on
+    the command call, so it's up to the peer to decide which commands
+    exist. Note that this means that a Connection actually exposes more
+    commands if it is connected to a GraphServ instance (simply because
+    the peer then supports more commands).
+    
+    The mapping of method calls to commands is performed as follows:
+    
+      * underscores are converted to dashes: the method add_arcs
+        corresponds to the add-arcs command in GraphCore. 
+    
+      * any int or string parameters passed to the method are passed on
+        to the command call, in the order they were specified.
+    
+      * parameters that are instances of DataSource will be used to pass
+        a data set to the command. That is, rows from the data source are
+        passed to the command as input.
+    
+      * parameters that are instances of DataSink will be used to handle
+        any data the command outputs. That is, rows from the command's
+        output data set will be passed to the data sink, one by one.
+    
+      * parameters that are arrays are wrapped in a new instance of
+        ArraySource and used as input for the command, as described
+        above. This is convenient for passing data directly to the
+        command.
+    
+      * parameters given as None or False are ignored.
+    
+      * other types of arguments trigger a gpUsageException
+    
+    A command called in this way, using its "plain" method counterpart,
+    always returns the status string from the peer's response upon
+    successful execution. The status may be "OK" or "NONE". Any failure on
+    the server side triggers a gpProcessorException. Any output of the
+    command is passed to the DataSink that was provided as a parameter
+    (or ignored if no sink was provided).
+    
+    However, modifiers can be attached to the method name to cause the
+    command's outcome to be treated differently:
+    
+      * if the method name is prefixed with "try_", no
+        gpProcessorException are thrown. Instead, errors reported by the
+        peer cause the method to return false. The cause of the error may
+        be examined using the getStatus() and getStatusMessage() methods.
+        Note that other exceptions like gpProtocollException or
+        gpUsageException are still thrown as usual.
+    
+      * if the method name is prefixed with "capture_", the command's
+        output is collected and returned as an array of arrays,
+        representing the rows of data. If the command fails, a
+        gpProcessorException is raised, as usual (or, if try_ is also
+        specified, the method returns false).
+    
+      * if the method name is suffixed with "_map" AND prefixed with
+        "capture_", the command's output is collected and returned as an
+        associative array. This is especially useful for commands like
+        "stats" that provide values for set of well known properties.
+        To build the associative array, rows from the output are
+        interpreted as a key-value pairs. If the _map suffix is used
+        without the capture_ prefix, a gpUsageException is raised.
+    
+    Modifiers can also be combined. For instance, try_capture_stats_map
+    would return GraphCore stats as an associative array, or null of the
+    call failed.
+    
+    Additional modifiers or extra virtual methods can be added by
+    subclasses by overriding the __getattr__() method or by registering
+    handlers with the addCallHandler() or addExecHandler() methods.
+
+    """
+
+    
+    
+    def __init__( self, transport=None ):
+        """Initialize a new connection with the given instance of
+        Transport.
+    
+        Note: Instances of Connection that use the appropriate
+        transport can ba e created conveniently using the static
+        factory methods called new_xxx_connection.
+        
+        @rtype: None
+
+        """
+        self.transport = transport
+        """The transport used to communicate with the peer that manages the
+        actual graph."""
+        #? Should the type of transport be checked?
+        #? EAFP: no. (easier to ask for forgiveness than permission)        
+        self.tainted = False
+        """If true, the protocol session is "out of step" and no further
+        commands can be processed."""
+        self.status = None
+        """The status string returned by the last command call."""
+        self.statusMessage = None
+        """The status message returned by the last command call."""
+        self.response = None
+        """The response from the last command call, including the status
+        string and status message."""
+        self.call_handlers = ()
+        """call handlers, see addCallHandler()"""
+        self.exec_handlers = ()
+        """Exec handlers, see addExecHandler()."""
+        self.allowPipes = False
+        """If peer-side input and output redirection should be allowed. For
+        security reasons, and to avoid confusion, i/o redirection is disabled
+        per default."""
+        self.strictArguments = True
+        """Whether arguments should be restricted to alphanumeric strings.
+        Enabled by default."""
+        self.__command_has_output = None
+        """wheather the command performed by execute() has generated
+        output"""
+        self.debug = False
+        """Debug mode enables lots of output to stdout."""
+ 
+    def connect(self):
+        """ Connect to the peer. 
+    
+        For connecting, this method relies solely on the transport
+        instance, which in turn uses the information passed to its
+        constructor to establish the connection.
+    
+        After connecting, this method calls checkProtocolVersion()
+        to make sure the peer speaks the correct protocol version.
+        If not, a gpProtocolException is raised.
+        
+        @rtype: None
+   
+        """
+        self.transport.connect()
+        self.checkProtocolVersion()
+         
+    def addCallHandler( self, handler ): #OK
+        """Register a call handler.
+        
+        The handler will be called before __getattr__ interprets a
+        method call as a GraphCore command, and can be used to add
+        support for additional virtual methods or extra modifiers.
+    
+        The handler must be a callable with the following signature:
+        handler(connection, {'command': ..., 'args': ..., 'source': ...,
+                'sink': ..., 'capture': ..., 'result': ...})
+        i.e. it accepts the varible connection
+        (this Connection instance) and a dictionary with the
+        following keys:
+    
+        * 'command' a reference to the command name, as a string, with
+          the try_, capture_ and _map modifiers removed.  
+        * 'args' a reference to the argument array, unprocessed, as 
+          passed to the method.
+        * 'source' a reference to a DataSource (or None), may be 
+          altered to change the command's input.
+        * 'sink' a reference to a DatSink (or null), may be altered to 
+          change the output handling for the command.
+        * 'capture' a reference to the capture flag. If true, output 
+          will be captured and returned as an array.
+        * 'result' the result to return from the method call, used 
+          only if the handler returns false.
+        * If the handler returns false, the value of 'result' will be 
+          returned from __getattr__ and no further action is taken.
+        
+        
+        @rtype: None
+        
+        """
+        self.call_handlers.append( handler )
+         
+    def addExecHandler(self, handler): #OK
+        """Register a call handler.
+    
+        # handler(connection, {'command': ..., 'source': ...,
+        #         'sink': ..., 'has_output': ..., 'status': ...})
+        #? I don't understand the first argument. It's not used in gpMySQL.php.    
+    
+        The handler will be called before __getattr__ passes a command
+        to the execute() method, and can thus be used to add support
+        for additional "artificial" commands that use the same parameter
+        handling as is used for "real" GraphCore commands.
+        
+        The handler must be a callable that accepts the varible connection
+        (this Connection instance) and a dictionary with the
+        following keys:
+    
+          * 'command' a refference to the command, as an array.
+            The first field is the command name,
+            the remaining fields contain the parameters for the command.
+          * 'source' a reference to a gpDatSource (or null), may be altered to 
+            change the command's input.
+          * 'sink' a reference to a gpDatSink (or null), may be altered to 
+            change the output handlking for the command.
+          * 'status' the commands return status, used of the handler
+            returns false.
+         
+        If the handler returns false, the value of $status will be used as the
+        command's result, and no command will be sent to the peer. The value
+        of $status is treated the same way the status returned from the peer is:
+        e.g. a gpProcessorException is thrown if the status is "FAILED", etc.
+        Also, modifiers like capture_ are applied to the output in the same way
+        as they are for "normal" commands.
+        
+        """
+        self.exec_handlers.append(handler)
+         
+    
+    def getStatus(self): #? Not consistent with command call
+        """Return the status string that resulted from the last command call.
+
+        The status string is 'OK' or 'NONE' for successfull calls, or 'FAILED',
+        'ERROR' or 'DENIED' for unsuccessful calls. Refer to the GraphCore and
+        GraphServ documentation for details.
+        
+        @rtype:  str
+        @return: the status string
+    
+        """
+        return self.status
+         
+    
+    def isClosed(self): # OK
+        """Tell if the connection is closed.
+
+        Returns true if close() was called on this connection, or it was closed for
+        some other reason. No commands can be called on a closed connection.
+    
+        """
+        return self.transport.isClosed()
+         
+    
+    def getStatusMessage(self): #? Check if consistent with commandcall
+        """Return the status message that resulted from the last command call.
+
+        The status message is the informative message that follows the status
+        string in the response from a command call. It may be useful for human
+        eyes, but should not be processed programmatically.
+    
+        """
+        return self.statusMessage
+         
+    
+    def getResponse(self): #? Ceck command call.
+        """Return the response that the last command call evoked.
+
+        This consists of the status string and the status message.
+    
+        """
+        return self.response
+         
+    
+    def _trace(self, context, msg, obj_type='nothing878423really'): #halbwegs OK
+        """Print messages to stdout when debug mode is enabled."""
+        if self.debug:
+            if obj_type != 'nothing878423really' and obj_type != type(None):
+                #? and... appears not in the php-version
+                #? introduced due to lack of ...?...:... in Python.
+                #? Makes all other code shorter. Philipp.
+                msg = msg + ': ' + re.sub('\s+', ' ', str(obj_type))
+                #? Check if the substitution is really necessary!
+            print "[gpClient] " + str(context) + ": " + msg + "\n"
+    
+    def checkPeer(self): #? OK
+        """Attempt to check if the peer is still alive."""
+        self.transport.checkPeer()
+          
+    
+    def setDebug(self, debug): #OK
+        """Enable or disable the debug mode.
+
+        In debug mode, tons of diagnostic information are written to stdout.
+        @param bool debug 
+
+        """
+        self.debug = debug
+        self.transport.setDebug(debug)
+          
+    
+    def getProtocolVersion(self):
+        """Return the protocol version reported by the peer."""
+        self.protocol_version()
+        version = self.statusMessage.strip()
+        return version
+          
+    
+    def checkProtocolVersion(self):
+        """Can raise a gpProtocolException.
+
+        It raises a gpProtocolException if the protocol version reported by the
+        peer is not compatible with CLIENT_PROTOCOL_VERSION.
+    
+        """
+        version = self.getProtocolVersion()
+        if int(version) != int(CLIENT_PROTOCOL_VERSION):
+            raise gpProtocolException(
+                "Bad protocol version: expected "
+                + str(CLIENT_PROTOCOL_VERSION)
+                + ", but peer uses " + str(version) )
+          
+    
+    def ping(self): #? ?
+        """Attempt to check if the peer is still responding."""
+        theVersion = self.protocol_version()
+        self._trace(str(self), theVersion)
+        
+        return theVersion
+         
+    
+    def __getattr__(self, name): # fast OK
+        """Invoke the default method handler default_method().
+
+        Returns a colsure. That is necessary, because __getattr__ does not
+        accept arguments like a function.
+
+        """
+
+        # A closure:
+        def default_method(*arguments):
+            """Maps calls to undeclared methods on calls to graph commands.
+        
+            Refer to the class level documentation of Connection for details.
+             
+            @param arguments: the arguments passed to the method
+           
+            """ 
+            cmd = re.sub('_', '-', name)
+            cmd = re.sub('^-*|-*$', '', cmd)
+            
+            source = None
+            sink = None
+            
+            if re.search('^try-', cmd):
+                cmd = cmd[4:]
+                try_it = True
+            else:
+                try_it = False
+                 
+            
+            if re.search( '^capture-', cmd ):
+                cmd = cmd[8:]
+                sink = ArraySink()
+                capture = True
+            else:
+                capture = False
+                 
+            
+            if re.search( '-map$', cmd ):
+                if not capture:
+                    raise gpUsageException(
+                      "using the _map suffix without the capture_ prefix"
+                      + " is meaningless" )
+                cmd = cmd[:strlen(cmd) - 4]
+                map_it = True
+            else:
+                map_it = False
+                 
+            
+            result = None
+            for handler in self.call_handlers:
+                go_on = handler(
+                  self,
+                  {'command': cmd, 'arguments': arguments,
+                   'source': source, 'sink': sink,
+                   'capture': capture, 'result': result})
+                if not go_on:   #? Check that handler returns False here!
+                    return result
+                 
+            
+            command = [cmd]
+    
+            for arg in arguments:
+                if isinstance(arg, (tuple, list)):
+                    source = ArraySource(arg)
+                elif isinstance(arg, (DataSource, DataSink)):
+                    if isinstance(arg, DataSource):
+                        source = arg
+                    elif isinstance(arg, DataSink):
+                        sink = arg
+                    else:
+                        raise gpUsageException(
+                          "arguments must be primitive or a DataSource"
+                          + " or DataSink. Found " + str(type(arg)))
+                elif not arg:
+                    continue
+                elif isinstance(arg, (str, int)):
+                    command.append(arg)
+                else:
+                    raise gpUsageException(
+                      "arguments must be objects, strings or integers. "
+                      + "Found " + type(arg))
+            
+            try:
+                do_execute = True
+                self.__command_has_output = None
+                
+                for handler in self.exec_handlers:
+                    go_on = handler(
+                      self,
+                      {'command': command, 'source': source,
+                       'sink': sink, 'has_output': has_output,
+                       'status': status}) #? !
+                    if not go_on:
+                        do_execute = False
+                        break
+                if do_execute:
+                    func = re.sub('-', '_', command[0] + '_impl')
+                    if hasattr(Connection, func ):
+                        args = command[1:]
+                        args.append(source)
+                        args.append(sink)
+                        
+                        status = func( args )
+                        #? Check das!
+                    else:
+                        status = self.execute(command, source, sink)
+                         
+                     
+            except gpProcessorException, e:
+            #XXX: catch more exceptions? ClientException? Protocolexception?
+                if not try_it:
+                    raise e
+                else:
+                    return False
+                 
+            
+            #note: call modifiers like capture change the return type!
+            if capture:
+                if status == 'OK':
+                    if self.__command_has_output:
+                        if map_it:
+                            return sink.getMap()
+                        else:
+                            return sink.getData()
+                    else:
+                        return True
+                         
+                     
+                elif status == 'NONE':
+                    return None
+                else:
+                    return False
+            else:
+                if result:
+                    return result # from handler
+                else:
+                    return status
+
+        # Return the closure.
+        return default_method 
+         
+    
+    def execute(self, command, source=None, sink=None):
+        """ Applies a command to the graph, i.e. runs the command on the peer.
+    
+        Note: this method implements the protocol used to interact with the peers,
+        based upon the line-by-line communication provided by the transport 
+        instance. Interaction with the peer is stateless between calls to this
+        function (except of course for the contents of the graph itself).
+        
+        If the command generates output, the instance variable
+        __command_has_output will be set True, otherwise False.
+        
+        @type  command: mixed
+        @param command: the command, as a single string or as an array
+                        containing the command name and any arguments.
+        @type  source: DataSource
+        @param source: the data source to take the commands input from
+                       (default: null)
+        @type  sink: DataSink
+        @param sink: the data sink to pass the commands output to
+                     (default: null)
+        @rtype:  string
+        @return: the status string returned by the command
+        @raise: gpProtocolException if a communication error ocurred while
+                talking to the peer
+        @raise: gpProcessorException if the peer reported an error
+        @raise: gpUsageException if $command does not conform to the rules
+                for commands. Note that self.strictArguments and
+                self.alloPipes influence which commands are allowed.
+        
+        """
+        self._trace(str(self), "BEGIN")
+        
+        if self.tainted:
+            raise gpProtocolException(
+              "connection tainted by previous error!")
+        if self.isClosed():
+            raise gpProtocolException("connection already closed!")
+        if self.transport.eof(): # closed by peer
+            self._trace(str(self),
+                       "connection closed by peer, closing our side too.")
+            self.close()
+            self.tainted = True
+            raise gpProtocolException("connection closed by peer!")
+        if isinstance(command, (list, tuple)):
+            if not command:
+                raise gpUsageException("empty command!")
+            c = command[0]
+            if not isinstance(c, (str, int)): #? Less restrictive in php.
+                raise gpUsageException(
+                  "invalid command type: " + type(c).__name__)
+            if not self.isValidCommandName(c):
+                raise gpUsageException("invalid command name: " + c)
+            strictArgs = self.strictArguments
+            for c in command:
+                if not isinstance(c, (str, int)):
+                    raise gpUsageException(
+                      "invalid argument type: " + type(c).__name__)
+                if self.allowPipes and re.search('^[<>]$', c):
+                    strictArgs = False
+                    # pipe, allow lenient args after that
+                if self.allowPipes and re.search('^[|&!:<>]+$', c):
+                    continue
+                    #operator
+                if not self.isValidCommandArgument(c, strictArgs):
+                    raise gpUsageException("invalid argument: $c")
+            
+            command = ' '.join("%s" % el for el in command)
+        
+        command = command.strip()
+        if command == '':
+            raise gpUsageException("command is empty!")
+        
+        self._trace(str(self), "command", command )
+        
+        if not self.isValidCommandString(command):
+            raise gpUsageException("invalid command: " + command)
+        
+        if (not self.allowPipes) and re.search('[<>]', command):
+            raise gpUsageException(
+              "command denied, pipes are disallowed by allowPipes = false; "
+              + "command: " + command);
+        
+        if source and (not re.search(':$', command)):
+            command = command + ':'
+        
+        if (not source) and re.search(':$', command):
+            source = NullSource.instance
+        
+        if source and re.search('<', command):
+            raise gpUsageException(
+              "can't use data input file and a local data source "
+              + "at the same time! " + command)
+        
+        if sink and re.search('>', command):
+            raise gpUsageException(
+              "can't use data output file and a local data sink "
+              + "at the same time! " + command)
+        
+        self._trace(str(self), ">>> ", command)
+        self.transport.send( command + LINEBREAK )
+        self._trace(str(self), "source", type(source))
+
+        if ( source ):
+            self._copyFromSource( source )
+        
+        rec = self.transport.receive()
+        self._trace(str(self), "<<< ", rec)
+
+        
+        if not rec:
+            self.tainted = True;
+            self.status = None;
+            self.statusMessage = None;
+            self.response = None;
+            
+            self._trace(str(self),
+                       "peer did not respond! Got value " + rec)
+            self.transport.checkPeer()
+            
+            raise gpProtocolException(
+              "peer did not respond! Got value " + str(rec))
+        
+        rec = rec.strip()        
+        self.response = rec
+        
+        match = re.search('^([a-zA-Z]+)[.:!](.*?):?$', rec)
+        if not match or not match.group(1):
+            self.tainted = True
+            self.close()
+            raise gpProtocolException(
+              "response should begin with status string like `OK`. Found: `"
+              + rec + "'")
+        
+        self.status = match.group(1)
+        self.statusMessage = match.group(2).strip()
+        
+        if self.status != 'OK' and self.status != 'NONE':
+            raise gpProcessorException(
+              self.status, self.statusMessage, command)
+        
+        self._trace(str(self), "sink", type(sink))
+        
+        if re.search(': *$', rec ):
+            if not sink:
+                sink = NullSink.instance
+                # note: we need to slurp the result in any case!
+                self._copyToSink(sink)
+            
+                self.__command_has_output = True
+            else:
+                self.__command_has_output = False
+             
+        
+        if self.transport.eof():        # closed by peer
+            self._trace(str(self),
+                       "connection closed by peer, closing our side too.")
+            self.close()
+        
+        return self.status
+         
+    
+    
+
+    def traverse_successors_without_impl(
+      id, depth, without, without_depth, source, sink):
+        """Implements a 'fake' command traverse-successors-without
+
+        which returns all decendants of onw nodes
+        minus the descendants of some other nodes.
+        This is a convenience function for a common case that
+        could otherwise only be covered by implementing the
+        set operation in php, or by using execute().
+
+        This method should not be called directly.
+        Instead, use the virtual method traverse_successors_without
+        in the same way as normal commands are called.
+        This include support for modifiers and flexible
+        handling of method parameters.
+
+        """
+        if not without_depth:
+            without_depth = depth
+        return self.execute(
+          "traverse-successors " + id + " " + depth +
+          " &&! traverse-successors " + without + " " + without_depth,
+          source, sink)
+         
+    
+    def isValidCommandName(name):   #static #OK
+        """Check if the given name is a valid command name.
+
+        Command names consist of a letter followed by any number of letters,
+        numbers, or dashes.
+    
+        """
+        return re.search('^[a-zA-Z_][-\w]*$', name)
+         
+    
+    def isValidCommandString(command): #static # fast OK
+        """Check if the given string passes some sanity checks.
+
+        The command string must start with a valid command, and it must not
+        contain any non-printable or non-ascii characters.
+    
+        """
+        if not re.search('^[a-zA-Z_][-\w]*($|[\s!&|<>#:])', command):
+            return False        # must start with a valid command
+        return(not re.search('[\0-\x1F\x80-\xFF]', command))
+         
+    
+    def isValidCommandArgument(arg, strict=True): #static #OK
+        """ Check if the given string is a valid argument.
+
+        If strict is set, it checks if arg consists of an alphanumeric
+        character followed by any number of alphanumerics, colons or dashes.
+        If strict is not set, this just checks that arg doesn't contain
+        any non-printable or non-ascii characters.
+     
+        @param string arg the argument to check
+        @param bool strict whether to perform a strict check (default: True).
+    
+        """
+        if not arg:
+            return False
+        
+        if strict:
+            return re.search('^\w[-\w]*(:\w[-\w]*)?$', str(arg))
+            #XXX: the ":" is needed for user:passwd auth. not pretty. 
+        return( not re.search('[\0-\x1F\x80-\xFF:|<>!&#]', str(arg)))
+            # low chars, high chars, and operators.
+    
+    @staticmethod
+    def splitRow(s):
+        """Convert a line from a data set into a list.
+    
+        If s is empty, this method returns False. if s starts with "#", it's
+        considered to consist of a single string field. Otherwise, the
+        string is split on ocurrances of TAB, semikolon or comma. Numeric
+        field values are converted to int, other fields remain strings.
+         
+        @param string s the row from the data set, as a string
+        @return array containing the fields in s, or false if s is empty.
+        
+        """
+        if not s:
+            return False
+        if s[0] == '#':
+            row = [s[1:]] #? Why no conversion to int?
+        else:
+            row = re.split(' *[;,\t] *', s)
+            for i, entry in enumerate(row):
+                if re.search('^\d+$', entry):
+                    row[i] = int(entry)
+        return row
+    
+    @staticmethod
+    def joinRow(row): # fertig.
+        """Create a string representing the data set `row'.
+        
+        joinRow tries to convert `row' to a reasonable string
+        representation. Numbers can be passed either as int or as str
+        types. If a string is passed or the list/tuple has only one
+        string which represents no number, this string will be marked
+        with a leading `#' and then be returned.
+        
+        If `row' is a tulple/list containing str or int types, those
+        will be returned as comma seperated values.
+        
+        @type row:  str, or list/tuple of int/str types
+        @param row: The data row
+        @rtype:  str
+        @return: string containing the fields from row
+        
+        """
+        #if not row:
+        #    return '' #? This case is covered by join(...).
+        if isinstance(row, str):
+            return '#' + row
+        if len(row) == 1 and isinstance(row[0], str) and \
+          not re.search('^\d+$', row[0]):
+            return '#' + row[0]
+        try:
+            s = ','.join("%s" % el for el in row)
+        except:
+            #print row
+            raise
+        return s
+    
+    def _copyFromSource(self, source ):
+        """Pass data from source to client line by line.
+    
+        Copies all data from the given source into the current command stream,
+        that is, passes them to the client line by line. 
+         
+        Note that this must only be called after passing a command line
+        terminated by ":" to the peer, so the peer expects a data set.
+        
+        This is implemented by calling the transport's make_sink() method
+        to create a sink for writing to the command stream, and then using
+        the copy() method to transfer the data.
+        
+        Note that source is not automatically closed by this method.
+        
+        """
+        sink = self.transport.make_sink()
+        self._trace(str(self), "source", type(source))
+        self.copy(source, sink, ' > ')
+        # source.close()        # to close or not to close...
+        self.transport.send( LINEBREAK )     #XXX: flush again??
+        self._trace(str(self), "copy complete.")
+        
+        # #
+        # while ( $row = $source->nextRow() )  
+            # $s = Connection::joinRow( $row );
+            # 
+            # fputs(self.hout, $s . LINEBREAK);
+            #  
+        # 
+        # fputs(self.hout, LINEBREAK); // blank line
+        
+         
+    
+    def _copyToSink(self, sink=None):
+        """Pass data from peer to sink line by line.
+    
+        Copies all data from the command response into the given sink,
+        that is, receives data from the peer line by line. 
+        
+        Note that this must only be called after the peer sent a response
+        line that endes with ":", so we know the peer is waiting to send a
+        data set.
+        
+        This is implemented by calling the transport's make_source() method
+        to create a source for reading from the command stream, and then
+        using the copy() method to transfer the data.
+        
+        Note that sink is flushed but not closed before this method returns.
+        
+        """
+        source = self.transport.make_source()
+        self._trace(str(self), "sink", type(sink))
+        self.copy(source, sink, ' < ' )
+        self._trace(str(self), "copy complete.")
+        # $source->close();     # to close or not to close...
+        
+        # #
+        # while ( $s = fgets(self.hin) )  
+            # $s = trim($s);
+            # if ( $s === '' ) break;
+            # 
+            # $row = Connection::splitRow( $s );
+            # 
+            # if ( $sink )  
+                # $sink->putRow( $row );
+                #  
+        
+    def copy(self, source, sink=None, indicator = '<>'): #OK
+        """Transfer all rows from a data source to a data sink.
+
+        Utility method. If sink is None, all rows are read from the
+        source and then discarded.
+        Before returning, the sink is flushed to commit any pending data.
+    
+        @type source:  DataSource
+        @param source: source of the data rows
+        @type sink:  DataSink
+        @param sink: sink where the rows are transferred to.
+        @type indicator:  str
+        @param indicator: the message to show in debug-mode
+        
+        """
+        for row in source:
+            if sink:
+                self._trace(__name__, indicator, row)
+                sink.putRow(row)
+            else:
+                self._trace(Connection.copy, "#", row)
+        if ( sink ):
+            sink.flush()
+    
+    def close(self): #OK
+        """Closes this connection by closing the underlying transport."""
+        self.transport.close()
+    
+    def new_client_connection(graphname, host=False, port=False): # static #OK
+        """Return a new ClientTransport connection.
+        
+        Create a new connection for accessing a remote graph
+        managed by a GraphServ service. Returns a Connection
+        that uses a ClientTransport to talk to the remote graph.
+     
+        @param string graphname the name of the graph to connect to
+        @param string host (default: 'localhost') the host the
+        GraphServ process is located on.
+        @param int port (default: PORT) the TCP port the
+        GraphServ process is listening on.
+    
+        """
+        return Connection( ClientTransport(graphname, host, port))
+    
+    def new_slave_connection(command, cwd=None, env=None): #static #OK
+        """Return a new SlaveTransport connection.
+        
+        Create a new connection for accessing a graph managed by a 
+        slave GraphCore process. Returns a Connection that uses a 
+        SlaveTransport to talk to the local graph.
+     
+        @param mixed command the command line to start GraphCore.
+               May be given as a string or as an array.
+               If given as a string, all parameters must be duely
+               escaped #?. If given as an array, command[0] must be
+               the path to the GraphCore executable.
+               See Slavetransport.makeCommand() for more details.
+        @param string cwd (default: None) the working dir to run
+               the slave process in. Defaults to the current working directory.
+        @param int env (default: None) the environment variables
+               to pass to the slave process. Defaults to inheriting
+               the PHP script's environment.
+    
+        """
+        return Connection(SlaveTransport(command, cwd, env))
+        
+    new_client_connection = staticmethod(new_client_connection)        
+    new_slave_connection = staticmethod(new_slave_connection)
+    isValidCommandName = staticmethod(isValidCommandName)
+    isValidCommandString = staticmethod(isValidCommandString)
+    isValidCommandArgument = staticmethod(isValidCommandArgument)
+
+
+
+
+
+def array_column(a, col):
+    """Extracts a column from a tabular structure
+ 
+    @type a:  list/tuple
+    @param a: an array of equal-sized arrays, representing
+              a table as a list of rows.
+    @type col:  usually int or str
+    @param col: the column key of the column to extract
+
+    @rtype:  list
+    @return: the values of column col from each row in a
+
+    """
+    column = []
+    
+    for k in a:
+        column[k] = a[k][col]
+         
+    
+    return column
+
+def pairs2map( pairs, key_col=0, value_col=1):
+    """Converts a list of key value pairs to a dictionary.
+
+    @type pairs:  array
+    @param pairs: an array of key value paris,
+                  representing a map as a list of tuples.
+    @type key_col:  mixed
+    @param key_col: the column that contains the key (default: 0)
+    @type value_col:  mixed
+    @param value_col: the column that contains the value (default: 1)
+
+    @rtype:  dictionary
+    @return: the key value pairs in pairs.
+
+    """
+    Map = []
+    for p in pairs:
+        k = p[key_col]
+        Map[ k ] = p[value_col]
+    return Map
+     
+def escapeshellcmd(command):
+    return '"%s"' % (
+        command
+        .replace('#', '\#')
+        .replace('&', '\&')
+        .replace(';', '\.')
+        .replace('`', '\`')
+        .replace('|', '\|')
+        .replace('*', '\*')
+        .replace('~', '\~')
+        .replace('<', '\<')
+        .replace('>', '\>')
+        .replace('^', '\^')
+        .replace('(', '\(')
+        .replace(')', '\)')
+        .replace('[', '\[')
+        .replace(']', '\]')
+        .replace('{', '\{')
+        .replace('}', '\}')
+        .replace('$', '\$')
+        .replace(',', '\,')
+        .replace('\'', '\\\'')
+        .replace('\"', '\\"')
+    )
+def escapeshellarg(arg):
+   return '\'' + arg.replace('\'', '\'' + '\\' + '\'' + '\'') + '\''
