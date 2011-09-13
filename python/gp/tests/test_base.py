@@ -182,7 +182,7 @@ class SlaveTestBase(ConnectionTestBase): #abstract
             self.gp.connect()
         except gpException, ex:
             print("Unable to launch graphcore instance from "
-              + "test_graphcore_path, please make sure graphcore is "
+              + "%s, please make sure graphcore is " % test_graphcore_path
               + "installed and check the test_graphcore_path "
               + "configuration options in test_config.py.")
             print("Original error: " + str(ex))
@@ -197,7 +197,7 @@ class ClientTestBase(ConnectionTestBase): #abstract
             self.gp = self.newConnection()
         except gpException, ex:
             print("Unable to connect to "
-              + "test_graphserv_host:test_graphserv_port, please make sure "
+              + "%s:%s, please make sure " % (test_graphserv_host, test_graphserv_port)
               + "the graphserv process is running and check the "
               + "test_graphserv_host and test_graphserv_port configuration "
               + "options in test_config.py.")
@@ -208,7 +208,7 @@ class ClientTestBase(ConnectionTestBase): #abstract
             self.gp.authorize(
               'password', test_admin + ":" + test_admin_password)
         except gpException, ex:
-            print("Unable to connect to authorize as " + test_admin
+            print("Unable to connect to authorize as %s " % test_admin
               + ", please check the test_admin and test_admin_password "
               + "configuration options in test_config.py.")
             print("Original error: " + str(ex))
@@ -217,7 +217,7 @@ class ClientTestBase(ConnectionTestBase): #abstract
         try:
             self.gp.create_graph(test_graph_name)
         except gpException, ex:
-            print("Unable to create graph " + test_graph_name
+            print("Unable to create graph %s" % test_graph_name
               + ", please check the test_graph_name configuration option "
               + "in test_config.py as well as the privileges of user "
               + test_admin + ".")
