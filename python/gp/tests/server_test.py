@@ -7,7 +7,7 @@ import tempfile
 from test_base import *
 from gp.client import *
 
-TestGraphName = 'test' + str(os.getpid())
+test_graph_name = 'test' + str(os.getpid())
 TestFilePrefix = '/tmp/gptest-' + str(os.getpid())
 
 
@@ -17,9 +17,9 @@ class ServerTest (ClientTestBase, unittest.TestCase):
     def test_createGraph(self):
         """Graph management functions"""
 
-        global TestGraphName
+        global test_graph_name
 
-        name = TestGraphName + "_2"
+        name = test_graph_name + "_2"
 
         # create the graph
         self.gp.create_graph(name)
@@ -46,7 +46,7 @@ class ServerTest (ClientTestBase, unittest.TestCase):
 
 
     def test_createNameRestrictions(self):
-        global TestGraphName
+        global test_graph_name
 
         self.gp.strictArguments = False
         # disable strict client-side validation
@@ -64,7 +64,7 @@ class ServerTest (ClientTestBase, unittest.TestCase):
         ok = self.gp.try_create_graph(n)
         self.assertFalse(ok, "numeric graph names should be forbidden! (name: `" + n + "`)" )
 
-        n = '1337' + TestGraphName
+        n = '1337' + test_graph_name
         ok = self.gp.try_create_graph(n)
         self.assertFalse( ok,
           "graph names starting with a number should be forbidden! (name: `"
@@ -73,7 +73,7 @@ class ServerTest (ClientTestBase, unittest.TestCase):
         chars = " \r\n\t\0\x09^!\"§\$%&/()[]\ \ =?'#`\\*+~.:, ;<>|@"
         for ch in chars:
             try:
-                n = TestGraphName + ch + "test"
+                n = test_graph_name + ch + "test"
                 ok = self.gp.create_graph(n)
                 self.fail("graph names containing `"
                   + ch + "` should be forbidden! (name: `"
@@ -82,7 +82,7 @@ class ServerTest (ClientTestBase, unittest.TestCase):
                 pass
                 # ok
             try:
-                n = ch + TestGraphName
+                n = ch + test_graph_name
                 ok = self.gp.create_graph(n)
                 self.fail("graph names starting with  `"
                   + ch + "` should be forbidden! (name: `" + n + "`)")
@@ -90,7 +90,7 @@ class ServerTest (ClientTestBase, unittest.TestCase):
                 pass
                 # ok
 
-        n = 'test1337' + TestGraphName
+        n = 'test1337' + test_graph_name
         ok = self.gp.try_create_graph(n)
         self.assertEquals( 'OK', ok,
           "graph names containing numbers should be allowd! (name: `"
@@ -99,16 +99,16 @@ class ServerTest (ClientTestBase, unittest.TestCase):
 
         chars = '-_8'
         for ch in chars:
-            n = 'test' + ch + TestGraphName
+            n = 'test' + ch + test_graph_name
             ok = self.gp.try_create_graph(n)
             self.assertEquals( 'OK', ok, "graph names containing `"
               + ch + "` should be allowd! (name: `" + n + "`)")
             self.gp.try_drop_graph(n)
 
     def test_dropGraph(self):
-        global TestGraphName
+        global test_graph_name
 
-        name = TestGraphName + "_2"
+        name = test_graph_name + "_2"
 
         self.gp.create_graph(name)
         self.gp.drop_graph(name)
@@ -121,15 +121,15 @@ class ServerTest (ClientTestBase, unittest.TestCase):
           + "graph again after it was already dropped." )
 
     def test_listGraphs(self):
-        global TestGraphName
+        global test_graph_name
 
         gp2 = self.newConnection()
         graphs = gp2.capture_list_graphs()
         graphs = array_column(graphs, 0)
-        self.assertTrue( TestGraphName in graphs,
-          "test table TestGraphName should be in the list" )
+        self.assertTrue( test_graph_name in graphs,
+          "test table test_graph_name should be in the list" )
 
-        self.gp.drop_graph(TestGraphName)
+        self.gp.drop_graph(test_graph_name)
         graphs = gp2.capture_list_graphs()
         #print "graphs: " . var_export($graphs, true) . "\n"
 
@@ -137,20 +137,20 @@ class ServerTest (ClientTestBase, unittest.TestCase):
 
         #print "graphs: " . var_export($graphs, true) . "\n"
 
-        #print "containes: " . var_export(ConnectionTestBase::setContains( $graphs, TestGraphName ), true) . "\n"
+        #print "containes: " . var_export(ConnectionTestBase::setContains( $graphs, test_graph_name ), true) . "\n"
 
         self.assertFalse(
-          ConnectionTestBase.setContains(graphs, TestGraphName),
-          "test table TestGraphName should no longer be in the list" )
+          ConnectionTestBase.setContains(graphs, test_graph_name),
+          "test table test_graph_name should no longer be in the list" )
 
     def test_shutdown(self):
-        global TestGraphName
+        global test_graph_name
 
         gp2 = self.newConnection()
-        gp2.use_graph(TestGraphName)
+        gp2.use_graph(test_graph_name)
         gp2.stats()
 
-        self.assertSessionValue('ConnectedGraph', TestGraphName)
+        self.assertSessionValue('ConnectedGraph', test_graph_name)
 
         self.gp.shutdown() # <------------------
         # self.assertSessionValue('ConnectedGraph', 'None');
@@ -166,20 +166,20 @@ class ServerTest (ClientTestBase, unittest.TestCase):
         gp2.close()
 
         gp3 = self.newConnection()
-        gp3.try_use_graph(TestGraphName)
+        gp3.try_use_graph(test_graph_name)
         self.assertEquals( 'FAILED', gp3.getStatus(),
           'graph should be unavailable after shutdown' )
         gp3.close()
 
 
     def test_quit(self):
-        global TestGraphName
+        global test_graph_name
 
         gp2 = self.newConnection()
-        gp2.use_graph(TestGraphName)
+        gp2.use_graph(test_graph_name)
         gp2.stats()
 
-        self.assertSessionValue('ConnectedGraph', TestGraphName)
+        self.assertSessionValue('ConnectedGraph', test_graph_name)
 
         self.gp.quit()  # <------------------
         self.assertStatus('OK')
@@ -198,7 +198,7 @@ class ServerTest (ClientTestBase, unittest.TestCase):
         gp2.close()
 
         gp3 = self.newConnection()
-        gp3.use_graph(TestGraphName)
+        gp3.use_graph(test_graph_name)
         self.assertEquals( 'OK', gp3.getStatus(),
           'graph should still be available to others after quit; response: %s' % gp2.getResponse() )
         gp3.close()
@@ -206,11 +206,11 @@ class ServerTest (ClientTestBase, unittest.TestCase):
 
     # privileges
     def test_createGraphPrivilege(self):
-        global TestGraphName
-        global TestAdmin, TestAdminPassword
-        global TestMaster, TestMasterPassword
+        global test_graph_name
+        global test_admin, test_admin_password
+        global test_master, test_master_password
 
-        name = TestGraphName + "_2"
+        name = test_graph_name + "_2"
 
         gp = self.newConnection()
 
@@ -219,13 +219,13 @@ class ServerTest (ClientTestBase, unittest.TestCase):
           "should not be able to create a graph without authorizing" )
 
         gp.authorize('password',
-          TestMaster + ":" + TestMasterPassword)
+          test_master + ":" + test_master_password)
         ok = gp.try_create_graph(name)
         self.assertFalse( ok,
           "should not be able to create a graph without admin privileges" )
 
         gp.authorize('password',
-          TestAdmin + ":" + TestAdminPassword)
+          test_admin + ":" + test_admin_password)
         # re-authenticate
         ok = gp.create_graph(name)
         self.assertEquals( ok, 'OK',
@@ -236,11 +236,11 @@ class ServerTest (ClientTestBase, unittest.TestCase):
 
 
     def test_dropGraphPrivilege(self):
-        global TestGraphName
-        global TestAdmin, TestAdminPassword
-        global TestMaster, TestMasterPassword
+        global test_graph_name
+        global test_admin, test_admin_password
+        global test_master, test_master_password
 
-        name = TestGraphName
+        name = test_graph_name
 
         gp = self.newConnection()
 
@@ -248,36 +248,36 @@ class ServerTest (ClientTestBase, unittest.TestCase):
         self.assertFalse( ok, "should not be able to drop a graph without authorizing" )
 
         gp.authorize('password',
-          TestMaster + ":" + TestMasterPassword)
+          test_master + ":" + test_master_password)
         ok = gp.try_drop_graph(name)
         self.assertFalse( ok,
           "should not be able to drop a graph without admin privileges" )
 
         gp.authorize('password',
-          TestAdmin + ":" + TestAdminPassword)
+          test_admin + ":" + test_admin_password)
         # re-authenticate
         ok = gp.drop_graph(name)
         self.assertEquals( ok, 'OK',
           "should be able to drop graph with admin privileges; response: %s" % gp.getResponse() )
 
     def test_inputPipingPrivilege(self):
-        global TestGraphName, TestGraphServHost
-        global TestAdmin, TestAdminPassword
-        global TestMaster, TestMasterPassword
+        global test_graph_name, test_graphserv_host
+        global test_admin, test_admin_password
+        global test_master, test_master_password
 
         #XXX: this uses local files, so it will always fail
         #     if the server isn't on localhost!
-        if TestGraphServHost != 'localhost':
+        if test_graphserv_host != 'localhost':
             return None
 
         f = os.path.dirname(os.path.abspath(__file__)) + '/gp.test.data'
 
         gp = self.newConnection()
-        gp.use_graph(TestGraphName)
+        gp.use_graph(test_graph_name)
         gp.allowPipes = True
 
         gp.authorize('password',
-          TestMaster + ":" + TestMasterPassword)
+          test_master + ":" + test_master_password)
 
         try:
             ok = gp.execute("add-arcs < " + f)
@@ -289,7 +289,7 @@ class ServerTest (ClientTestBase, unittest.TestCase):
               + str(ex))
 
 
-        gp.authorize('password', TestAdmin + ":" + TestAdminPassword)
+        gp.authorize('password', test_admin + ":" + test_admin_password)
         # re-authenticate
         ok = gp.execute("add-arcs < " + f)
         self.assertEquals( ok, 'OK',
@@ -297,19 +297,19 @@ class ServerTest (ClientTestBase, unittest.TestCase):
 
 
     def test_outputPipingPrivilege(self):
-        global TestGraphName, TestGraphServHost
-        global TestAdmin, TestAdminPassword
-        global TestMaster, TestMasterPassword
+        global test_graph_name, test_graphserv_host
+        global test_admin, test_admin_password
+        global test_master, test_master_password
 
         #XXX: this uses local files, so it will always fail
         #     if the server isn't on localhost!
-        if TestGraphServHost != 'localhost':
+        if test_graphserv_host != 'localhost':
             return None
 
         f = tempfile.mktemp(suffix='gpt')
 
         gp = self.newConnection()
-        gp.use_graph(TestGraphName)
+        gp.use_graph(test_graph_name)
         gp.allowPipes = True
 
         try:
@@ -322,7 +322,7 @@ class ServerTest (ClientTestBase, unittest.TestCase):
               + str(ex))
 
         gp.authorize(
-          'password', TestAdmin + ":" + TestAdminPassword)
+          'password', test_admin + ":" + test_admin_password)
         # re-authenticate
         ok = gp.execute("list-roots > " + f)
         self.assertEquals(
@@ -335,11 +335,11 @@ class ServerTest (ClientTestBase, unittest.TestCase):
             pass
 
     def test_addArcsPrivilege(self):
-        global TestGraphName
-        global TestMaster, TestMasterPassword
+        global test_graph_name
+        global test_master, test_master_password
 
         gp = self.newConnection()
-        gp.use_graph(TestGraphName)
+        gp.use_graph(test_graph_name)
 
         ok = gp.try_add_arcs(((1, 11 ), (1, 12 ) ) )
         self.assertFalse(
@@ -348,20 +348,20 @@ class ServerTest (ClientTestBase, unittest.TestCase):
           "command should be denied, not fail" )
 
         gp.authorize('password',
-          TestMaster + ":" + TestMasterPassword)
+          test_master + ":" + test_master_password)
         ok = gp.try_add_arcs(((1, 11 ), (1, 12 ) ) )
         self.assertEquals( 'OK', ok,
           "should be able to add arcs with updater privileges; response: %s" % gp.getResponse() )
 
     def test_removeArcsPrivilege(self):
-        global TestGraphName
-        global TestMaster, TestMasterPassword
+        global test_graph_name
+        global test_master, test_master_password
 
         self.gp.add_arcs(((1, 11 ), (1, 12 ) ) )
         # add some arcs as admin
 
         gp = self.newConnection()
-        gp.use_graph(TestGraphName)
+        gp.use_graph(test_graph_name)
 
         ok = gp.try_remove_arcs(((1, 11 ), ) )
         self.assertFalse( ok,
@@ -370,21 +370,21 @@ class ServerTest (ClientTestBase, unittest.TestCase):
           "command should be denied, not fail" )
 
         gp.authorize('password',
-          TestMaster + ":" + TestMasterPassword)
+          test_master + ":" + test_master_password)
           
         ok = gp.try_remove_arcs(((1, 11 ), ) )
         self.assertEquals( 'OK', ok,
           "should be able to delete arcs with updater privileges; response: %s" % gp.getResponse() )
 
     def test_replaceSuccessorsPrivilege(self):
-        global TestGraphName
-        global TestMaster, TestMasterPassword
+        global test_graph_name
+        global test_master, test_master_password
 
         self.gp.add_arcs(((1, 11 ), (1, 12 ) ) )
         # add some arcs as admin
 
         gp = self.newConnection()
-        gp.use_graph(TestGraphName)
+        gp.use_graph(test_graph_name)
 
         ok = gp.try_replace_successors( 1, (17, ) )
         self.assertFalse( ok,
@@ -393,20 +393,20 @@ class ServerTest (ClientTestBase, unittest.TestCase):
           "command should be denied, not fail" )
 
         gp.authorize('password',
-          TestMaster + ":" + TestMasterPassword)
+          test_master + ":" + test_master_password)
         ok = gp.try_replace_successors( 1, (17, ) )
         self.assertEquals( 'OK', ok,
           "should be able to replace arcs with updater privileges; response: %s" % gp.getResponse() )
 
     def test_replacePredecessorsPrivilege(self):
-        global TestGraphName
-        global TestMaster, TestMasterPassword
+        global test_graph_name
+        global test_master, test_master_password
 
         self.gp.add_arcs(((1, 11 ), (1, 12 ) ) )
         # add some arcs as admin
 
         gp = self.newConnection()
-        gp.use_graph(TestGraphName)
+        gp.use_graph(test_graph_name)
 
         ok = gp.try_replace_predecessors( 1, (17, ) )
         self.assertFalse( ok,
@@ -415,56 +415,56 @@ class ServerTest (ClientTestBase, unittest.TestCase):
           "command should be denied, not fail" )
 
         gp.authorize('password',
-          TestMaster + ":" + TestMasterPassword)
+          test_master + ":" + test_master_password)
         ok = gp.try_replace_predecessors( 1, (17, ) )
         self.assertEquals( 'OK', ok,
           "should be able to replace arcs with updater privileges; response: %s" % gp.getResponse() )
 
     def testClearPrivilege(self):
-        global TestGraphName
-        global TestAdmin, TestAdminPassword
-        global TestMaster, TestMasterPassword
+        global test_graph_name
+        global test_admin, test_admin_password
+        global test_master, test_master_password
 
         gp = self.newConnection()
-        gp.use_graph(TestGraphName)
+        gp.use_graph(test_graph_name)
 
         ok = gp.try_clear()
         self.assertFalse( ok,
           "should not be able to clear a graph without authorizing" )
 
         gp.authorize('password',
-          TestMaster + ":" + TestMasterPassword)
+          test_master + ":" + test_master_password)
         ok = gp.try_clear()
         self.assertEquals( ok, 'OK',
           "should be able to clear graph with updater privileges" )
 
         gp.authorize('password',
-          TestAdmin + ":" + TestAdminPassword)
+          test_admin + ":" + test_admin_password)
         # re-authenticate
         ok = gp.try_clear()
         self.assertEquals( ok, 'OK',
           "should be able to clear graph with admin privileges" )
 
     def test_shutdownPrivilege(self):
-        global TestGraphName
-        global TestAdmin, TestAdminPassword
-        global TestMaster, TestMasterPassword
+        global test_graph_name
+        global test_admin, test_admin_password
+        global test_master, test_master_password
 
         gp = self.newConnection()
-        gp.use_graph(TestGraphName)
+        gp.use_graph(test_graph_name)
 
         ok = gp.try_shutdown()
         self.assertFalse( ok,
           "should not be able to shut down a graph without authorizing" )
 
         gp.authorize('password',
-          TestMaster + ":" + TestMasterPassword)
+          test_master + ":" + test_master_password)
         ok = gp.try_shutdown()
         self.assertFalse( ok, "should not be able to shut down a graph "
           + "without admin privileges" )
 
         gp.authorize('password',
-          TestAdmin + ":" + TestAdminPassword)
+          test_admin + ":" + test_admin_password)
         # re-authenticate
         ok = gp.try_shutdown()
         self.assertEquals( ok, 'OK',

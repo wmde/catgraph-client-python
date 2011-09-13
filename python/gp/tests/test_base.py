@@ -3,7 +3,7 @@ import os, sys, traceback
 from gp.client import *
 from test_config import *
 
-TestGraphName = 'test' + str(os.getpid())
+test_graph_name = 'test' + str(os.getpid())
 
 def suicide( code = 1 ):
     os._exit(code)
@@ -175,16 +175,15 @@ class ConnectionTestBase(TestBase):
 class SlaveTestBase(ConnectionTestBase): #abstract
  
     def setUp(self):
-        global TestGraphCorePath
         self.dump = PipeSink(sys.stdout)
         
         try:
-            self.gp = Connection.new_slave_connection(TestGraphCorePath)
+            self.gp = Connection.new_slave_connection(test_graphcore_path)
             self.gp.connect()
         except gpException, ex:
             print("Unable to launch graphcore instance from "
-              + "TestGraphCorePath, please make sure graphcore is "
-              + "installed and check the TestGraphCorePath "
+              + "test_graphcore_path, please make sure graphcore is "
+              + "installed and check the test_graphcore_path "
               + "configuration options in test_config.py.")
             print("Original error: " + str(ex))
             traceback.print_exc();
@@ -194,67 +193,58 @@ class SlaveTestBase(ConnectionTestBase): #abstract
 class ClientTestBase(ConnectionTestBase): #abstract
  
     def setUp(self):
-        global TestAdmin, TestAdminPassword
-        global TestGraphName
-        global TestGraphServHost, TestGraphServPort
-        
         try:
             self.gp = self.newConnection()
         except gpException, ex:
             print("Unable to connect to "
-              + "TestGraphServHost:TestGraphServPort, please make sure "
+              + "test_graphserv_host:test_graphserv_port, please make sure "
               + "the graphserv process is running and check the "
-              + "TestGraphServHost and TestGraphServPort configuration "
+              + "test_graphserv_host and test_graphserv_port configuration "
               + "options in test_config.py.")
             print("Original error: " + str(ex))
             traceback.print_exc();
             suicide(11)
         try:
             self.gp.authorize(
-              'password', TestAdmin + ":" + TestAdminPassword)
+              'password', test_admin + ":" + test_admin_password)
         except gpException, ex:
-            print("Unable to connect to authorize as " + TestAdmin
-              + ", please check the TestAdmin and TestAdminPassword "
+            print("Unable to connect to authorize as " + test_admin
+              + ", please check the test_admin and test_admin_password "
               + "configuration options in test_config.py.")
             print("Original error: " + str(ex))
             traceback.print_exc();
             suicide(12)
         try:
-            self.gp.create_graph(TestGraphName)
+            self.gp.create_graph(test_graph_name)
         except gpException, ex:
-            print("Unable to create graph " + TestGraphName
-              + ", please check the TestGraphName configuration option "
+            print("Unable to create graph " + test_graph_name
+              + ", please check the test_graph_name configuration option "
               + "in test_config.py as well as the privileges of user "
-              + TestAdmin + ".")
+              + test_admin + ".")
             print("Original error: " + str(ex))
             traceback.print_exc();
             suicide(13)
         
-        self.gp.use_graph(TestGraphName)
+        self.gp.use_graph(test_graph_name)
         # if use_graph throws an error, let it rip. it really shouldn't
         # happen and it's not a confiugration problem
     
     def newConnection(self):
-        global TestGraphServHost, TestGraphServPort
-        
         gp = Connection.new_client_connection(
-          None, TestGraphServHost, TestGraphServPort)
+          None, test_graphserv_host, test_graphserv_port)
         gp.connect()
         return gp
     
     def tearDown(self):
-        global TestGraphName
-        global TestAdmin, TestAdminPassword
-        
         try:
-            self.gp.drop_graph(TestGraphName)
+            self.gp.drop_graph(test_graph_name)
         except gpProtocolException, ex:
             #failed to remove graph, maybe the connection is gone? try again.
             try:
                 gp = self.newConnection()
                 gp.authorize('password',
-                  TestAdmin + ":" + TestAdminPassword)
-                gp.drop_graph(TestGraphName)
+                  test_admin + ":" + test_admin_password)
+                gp.drop_graph(test_graph_name)
             except gpException, ex:
                 # just give up
                 # pass
