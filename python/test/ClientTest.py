@@ -5,7 +5,7 @@ import unittest
 import os
 import tempfile
 from TestBase import *
-from Client import *
+from gp.client import *
 
 TestGraphName = 'test' + str(os.getpid())
 TestFilePrefix = '/tmp/gptest-' + str(os.getpid())

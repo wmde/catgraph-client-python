@@ -1,5 +1,5 @@
-from Client import Connection
-from Client import gpException
+from gp.client import Connection
+from gp.client import gpException
 from TestConfig import *
 import TestConfig
 import os

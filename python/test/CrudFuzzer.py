@@ -1,5 +1,5 @@
 from FuzzerBase import *
-from Client import *
+from gp.client import *
 from TestConfig import *
 import sys
 

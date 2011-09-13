@@ -6,7 +6,7 @@ import os
 import tempfile
 from TestBase import *
 from TestConfig import *
-from Client import *
+from gp.client import *
  
 class gpCoreTest (SlaveTestBase, unittest.TestCase):
     """

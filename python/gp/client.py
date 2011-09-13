@@ -50,8 +50,6 @@ import time
 import subprocess
 import inspect
 
-#__package__ = "gp" #?
-
 LINEBREAK = "\r\n"
 """Linebreak to use when talking to GraphServ or GraphCore instances.
    This is \\r\\n per spec. but \\n alone should also work."""

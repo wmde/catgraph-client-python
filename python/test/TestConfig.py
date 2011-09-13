@@ -1,11 +1,11 @@
-import Client
+from gp.client import *
 
 #graphcore binary for slave tests
 TestGraphCorePath = '/home/daniel/src/graphserv/graphcore/graphcore';
 
 #graphserv coordinates for client tests
 TestGraphServHost = 'localhost';
-TestGraphServPort = Client.PORT; 
+TestGraphServPort = PORT; 
 
 #logins for test accounts
 TestAdmin = 'fred';

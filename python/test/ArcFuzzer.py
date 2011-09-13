@@ -1,5 +1,5 @@
 from FuzzerBase import FuzzerBase
-from Client import Connection
+from gp.client import Connection
 import random
 import sys
 

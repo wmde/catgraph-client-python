@@ -1,6 +1,6 @@
 import unittest
 import os, sys, traceback
-from Client import *
+from gp.client import *
 from TestConfig import *
 
 TestGraphName = 'test' + str(os.getpid())
@@ -113,7 +113,7 @@ class ConnectionTestBase(TestBase):
     
     def test_stats(self):
         stats = self.gp.capture_stats()
-        stats = Client.pairs2map(stats)
+        stats = pairs2map(stats)
         self.assertEqual(stats['ArcCount'], 0, "arc count should be zero")
     
     def test_dataSetHandling(self):

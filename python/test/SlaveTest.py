@@ -4,7 +4,7 @@
 import unittest
 import tempfile
 from TestBase import *
-from Client import *
+from gp.client import *
 
 
 def read_lines( filepath ):
