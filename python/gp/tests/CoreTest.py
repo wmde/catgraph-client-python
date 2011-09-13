@@ -5,7 +5,7 @@ import unittest
 import os
 import tempfile
 from TestBase import *
-from TestConfig import *
+from test_config import *
 from gp.client import *
  
 class gpCoreTest (SlaveTestBase, unittest.TestCase):

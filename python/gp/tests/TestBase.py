@@ -1,7 +1,7 @@
 import unittest
 import os, sys, traceback
 from gp.client import *
-from TestConfig import *
+from test_config import *
 
 TestGraphName = 'test' + str(os.getpid())
 
@@ -185,7 +185,7 @@ class SlaveTestBase(ConnectionTestBase): #abstract
             print("Unable to launch graphcore instance from "
               + "TestGraphCorePath, please make sure graphcore is "
               + "installed and check the TestGraphCorePath "
-              + "configuration options in TestConfig.py.")
+              + "configuration options in test_config.py.")
             print("Original error: " + str(ex))
             traceback.print_exc();
             suicide(10)
@@ -205,7 +205,7 @@ class ClientTestBase(ConnectionTestBase): #abstract
               + "TestGraphServHost:TestGraphServPort, please make sure "
               + "the graphserv process is running and check the "
               + "TestGraphServHost and TestGraphServPort configuration "
-              + "options in TestConfig.py.")
+              + "options in test_config.py.")
             print("Original error: " + str(ex))
             traceback.print_exc();
             suicide(11)
@@ -215,7 +215,7 @@ class ClientTestBase(ConnectionTestBase): #abstract
         except gpException, ex:
             print("Unable to connect to authorize as " + TestAdmin
               + ", please check the TestAdmin and TestAdminPassword "
-              + "configuration options in TestConfig.py.")
+              + "configuration options in test_config.py.")
             print("Original error: " + str(ex))
             traceback.print_exc();
             suicide(12)
@@ -224,7 +224,7 @@ class ClientTestBase(ConnectionTestBase): #abstract
         except gpException, ex:
             print("Unable to create graph " + TestGraphName
               + ", please check the TestGraphName configuration option "
-              + "in TestConfig.py as well as the privileges of user "
+              + "in test_config.py as well as the privileges of user "
               + TestAdmin + ".")
             print("Original error: " + str(ex))
             traceback.print_exc();

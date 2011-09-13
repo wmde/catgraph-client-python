@@ -1,7 +1,7 @@
 from gp.client import Connection
 from gp.client import gpException
-from TestConfig import *
-import TestConfig
+from test_config import *
+import test_config
 import os
 import random
 import time
@@ -43,7 +43,7 @@ class FuzzerBase (object): # abstract
               + ", please make sure the graphserv process is running "
               + "and check the TestGraphServHost and "
               + "TestGraphServPort configuration options in "
-              + "gpTestConfig.php.")
+              + "test_config.py.")
             print("Original error: " + str(ex))
             quit(11)
         
@@ -54,7 +54,7 @@ class FuzzerBase (object): # abstract
             print("Unable to connect to authorize as "
               + TestAdmin + ", please check the gpTestAdmin and "
               + "TestAdminPassword configuration options in "
-              + "TestConfig.php.")
+              + "test_config.py.")
             print("Original error: " + str(ex))
             quit(12)
         
@@ -65,7 +65,7 @@ class FuzzerBase (object): # abstract
             self.gp.use_graph( self.graph )
         except gpException, ex:
             print("Unable to use graph self.graph, please check the "
-              + "TestGraphName configuration option in gpTestConfig.php "
+              + "TestGraphName configuration option in test_config.py "
               + "as well as the privileges of user " + gpTestAdmin + ".")
             print("Original error: " + ex.getMessage())
             quit(13)

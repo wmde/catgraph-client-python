@@ -1,6 +1,6 @@
 from FuzzerBase import *
 from gp.client import *
-from TestConfig import *
+from test_config import *
 import sys
 
 global TestGraphServHost
