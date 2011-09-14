@@ -1842,7 +1842,8 @@ class Connection(object):
     def close(self): #OK
         """Closes this connection by closing the underlying transport."""
         self.transport.close()
-    
+
+	@staticmethod
     def new_client_connection(graphname, host=False, port=False): # static #OK
         """Return a new ClientTransport connection.
         
@@ -1859,6 +1860,7 @@ class Connection(object):
         """
         return Connection( ClientTransport(graphname, host, port))
     
+	@staticmethod
     def new_slave_connection(command, cwd=None, env=None): #static #OK
         """Return a new SlaveTransport connection.
         
