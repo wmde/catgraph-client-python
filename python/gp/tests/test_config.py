@@ -14,11 +14,11 @@ test_admin_password = 'test';
 test_master = 'jules';
 test_master_password = 'test';
 
-#mysql login for testing gpMySQL
-#test_mysql_host = 'localhost';
-#test_mysql_user = 'gptest';
-#test_mysql_password = 'gptest';
-#test_mysql_database = 'gptest';
+#mysql login for testing MySQLGlue
+test_mysql_host = 'localhost';
+test_mysql_user = 'gptest';
+test_mysql_password = 'gptest';
+test_mysql_database = 'gptest';
 
 #mediawiki database info
-#test_mediawiki_table_prefix = 'mw_';
+test_mediawiki_table_prefix = 'mw_';

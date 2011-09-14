@@ -1101,7 +1101,7 @@ class Connection(object):
     
         * 'command' a reference to the command name, as a string, with
           the try_, capture_ and _map modifiers removed.  
-        * 'args' a reference to the argument array, unprocessed, as 
+        * 'arguments' a reference to the argument array, unprocessed, as 
           passed to the method.
         * 'source' a reference to a DataSource (or None), may be 
           altered to change the command's input.
@@ -1267,7 +1267,7 @@ class Connection(object):
         """
         
         if re.search('_impl$', name):
-			raise AttributeError("no such impl: %s" % name)
+            raise AttributeError("no such impl: %s" % name)
         
         #TODO: do command name normalization outside the closure!
 
@@ -1843,7 +1843,7 @@ class Connection(object):
         """Closes this connection by closing the underlying transport."""
         self.transport.close()
 
-	@staticmethod
+    @staticmethod
     def new_client_connection(graphname, host=False, port=False): # static #OK
         """Return a new ClientTransport connection.
         
@@ -1860,7 +1860,7 @@ class Connection(object):
         """
         return Connection( ClientTransport(graphname, host, port))
     
-	@staticmethod
+    @staticmethod
     def new_slave_connection(command, cwd=None, env=None): #static #OK
         """Return a new SlaveTransport connection.
         

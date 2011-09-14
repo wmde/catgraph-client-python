@@ -92,9 +92,9 @@ class SlaveTest (SlaveTestBase, unittest.TestCase):
         x = self.gp.try_capture_foo()
         # should not trigger an exception...
          
-    def dummyCallHandler(self, gp, dictionary):
-        if ( dictionary['command'] == 'dummy' ):  
-            dictionary['result'] = "test"
+    def dummyCallHandler(self, gp, params):
+        if ( params['command'] == 'dummy' ):  
+            params['result'] = "test"
             return False
         return True
          
