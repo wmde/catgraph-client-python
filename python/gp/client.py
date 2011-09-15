@@ -1353,6 +1353,12 @@ class Connection(object):
                     raise gpUsageException(
                       "arguments must be objects, strings or integers. "
                       + "Found %s" % type(arg))
+                      
+            if try_it:
+                catchThis = gpProcessorException 
+                #XXX: catch more exceptions? ClientException? Protocolexception?
+            else:
+                catchThis = None
             
             try:
                 do_execute = True
@@ -1389,12 +1395,8 @@ class Connection(object):
                         status = self.execute(command, source, sink)
                          
                      
-            except gpProcessorException, e:
-            #XXX: catch more exceptions? ClientException? Protocolexception?
-                if not try_it:
-                    raise e
-                else:
-                    return False
+            except catchThis as e:
+                return False
                  
             #note: call modifiers like capture change the return type!
             if capture:

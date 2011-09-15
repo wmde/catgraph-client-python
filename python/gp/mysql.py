@@ -2,7 +2,7 @@ from client import *
 
 import types
 import re
-import MySQLdb
+import MySQLdb, MySQLdb.cursors
 
 class MySQLSource (DataSource):
     
@@ -125,7 +125,7 @@ class MySQLTable (object):
 
     def get_insert(self, ignore = False ):
         ig = "IGNORE" if ignore else ""
-        return "INSERT ig INTO " + self.get_name() + " ( " + self.get_field_list() + " ) "
+        return "INSERT " + ig + " INTO " + self.get_name() + " ( " + self.get_field_list() + " ) "
       
 
     def get_order_by(self,):
@@ -149,7 +149,6 @@ class MySQLSelect (MySQLTable):
                 f = ff[i]
                 f = re.sub(r'^.*\s+AS\s+', '', f, flags = re.IGNORECASE) # use alias if defined
                 ff[i] = f
-            
             
             super(MySQLSelect,self).__init__(n, ff)
         else:
@@ -332,20 +331,41 @@ class MySQLGlue (Connection):
     def mysql_unbuffered_query( self, sql ):
         return self.mysql_query( sql, True )
         
-    def mysql_query( self, sql, unbuffered = None ):
+    def mysql_query( self, sql, unbuffered = None, dict_rows = False ):
         if unbuffered is None:
             unbuffered = self.unbuffered
             
         try:
+            if unbuffered:
+                if dict_rows:
+                    # no buffering, returns dicts
+                    cursor = MySQLdb.cursors.SSDictCursor(self.connection) # TESTME
+                else:
+                    # no buffering, returns tuples
+                    cursor = MySQLdb.cursors.SSCursor(self.connection) # TESTME
+            else:
+                if dict_rows:
+                    # buffers result, returns dicts
+                    cursor = MySQLdb.cursors.DictCursor(self.connection) # TESTME
+                else:
+                    # default: buffered tuples
+                    cursor = MySQLdb.cursors.Cursor(self.connection) 
+            
             cursor = self.connection.cursor()
             #TODO: apply buffered/unbuffered
             
             cursor.execute( sql )
             
-            m = types.MethodType(_fetch_dict, cursor, cursor.__class__)
-            setattr(cursor, "fetch_dict", m)
+            if not dict_rows:
+                # HACK: glue a fetch_dict method to a cursor that natively returns sequences from fetchone()
+                m = types.MethodType(_fetch_dict, cursor, cursor.__class__)
+                setattr(cursor, "fetch_dict", m)
+            else:
+                # make fetch_dict an alias for fetchone
+                cursor.fetch_dict = cursor.fetchone # TESTME
             
             return cursor
+            
         except MySQLdb.Error, e:
             q = sql.replace('/\s+/', ' ')
             if ( len(q) > 255 ): q = q[:252] + '...'
@@ -370,10 +390,10 @@ class MySQLGlue (Connection):
         capture = params['capture']
         result = params['result']
             
-        m = re.search( r'-(from|into)', cmd )
+        m = re.search( r'-(from|into)$', cmd )
             
         if m:
-            cmd = re.sub(r'-(from|into)?', '', cmd)
+            cmd = re.sub(r'-(from|into)?$', '', cmd)
             action = m.group(1)
             
             c = len(args)
@@ -385,8 +405,10 @@ class MySQLGlue (Connection):
             args = args[0:c-1]
             
             if isinstance(t, (str, unicode)) :
-                if ( re.search( r'^.*select\s+i', t, flags = re.IGNORECASE) ): t = MySQLSelect(t)
-                else: t = re.split( r'\s+|\s*,\s*', t )
+                if ( re.search( r'^.*select\s+', t, flags = re.IGNORECASE) ): 
+                    t = MySQLSelect(t)
+                else: 
+                    t = re.split( r'\s+|\s*,\s*', t )
             
             
             if ( isinstance(t, (list, tuple)) ): t = MySQLTable( t[0], t[1:] )

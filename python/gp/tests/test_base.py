@@ -64,10 +64,10 @@ class TestBase:
     @staticmethod
     def arrayEquals( a, b ):
         if len(a) != len(b):
-			return False
+            return False
         
-        k = 0
-        for v in a:
+        for k in range(len(a)):
+            v = a[k]
             w = b[k]
             
             if type(v) in (tuple, list, set):
@@ -76,16 +76,51 @@ class TestBase:
                 try:
                     if not TestBase.arrayEquals( w, v ):
                         return False
-                except:
-                    #type error, probably. perhaps w wasn't iterable
+                except TypeError, AttributeError:
+                    #perhaps w wasn't iterable
                     return False
             elif type(v) == dict:
-                raise Exception("deep dictionary comparison not yet implemented")
+                try:
+                    if not TestBase.dictEquals( w, v ):
+                        return False
+                except TypeError, AttributeError:
+                    #perhaps w wasn't a dict
+                    return False
+            elif w != v:
+                return False
+        
+        return True
+
+    @staticmethod
+    def dictEquals( a, b ):
+        if len(a) != len(b):
+            return False
+        
+        for k, v in a.items():
+            if not k in b:
+                return False
+            
+            w = b[k]
+            
+            if type(v) in (tuple, list, set):
+                #WARNING: no protection against circular array references
+                
+                try:
+                    if not TestBase.arrayEquals( w, v ):
+                        return False
+                except TypeError, AttributeError:
+                    #perhaps w wasn't iterable
+                    return False
+            elif type(v) == dict:
+                try:
+                    if not TestBase.dictEquals( w, v ):
+                        return False
+                except TypeError, AttributeError:
+                    #perhaps w wasn't a dict
+                    return False
             elif w != v:
                 return False
             
-            k += 1
-        
         return True
 
 
