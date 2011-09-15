@@ -19,10 +19,9 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
             suicide(10)
         
         try: 
-            self.gp.mysql_connect(test_mysql_host, test_mysql_user, test_mysql_password)
-            self.gp.mysql_select_db(test_mysql_database)
+            self.gp.mysql_connect(test_mysql_host, test_mysql_user, test_mysql_password, test_mysql_database)
         except gpException as ex:
-            print "Unable to connect to table %s on MySQL host %s as %s, please make sure MySQL is running and check the test_mysql_host and related configuration options in test_cofig.py.\nOriginal error: " % (test_mysql_database, test_mysql_host, test_mysql_user, ex.getMessage() )
+            print "Unable to connect to database %s on MySQL host %s as %s, please make sure MySQL is running and check the test_mysql_host and related configuration options in test_cofig.py.\nOriginal error: %s " % (test_mysql_database, test_mysql_host, test_mysql_user, ex.getMessage() )
             suicide(10)
     
     def _make_table( self, table, fieldSpec ):
@@ -46,18 +45,28 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
         #-----------------------------------------------------------
         src = self.gp.make_source( MySQLTable("test", "a", "b") )
         
-        self.assertEquals(( 3, 8 ), src.nextRow() , "expected row to be 3,8 " )
-        self.assertEquals(( 7, 9 ), src.nextRow() , "expected row to be 7,9" )
-        self.assertEquals(( 11, 11 ), src.nextRow() , "expected row to be 11,11" )
-        self.assertNull( src.nextRow(), "expected next row to be null" )
+        self.assertEquals(( 3, 8 ), src.next() , "expected row to be 3,8 " )
+        self.assertEquals(( 7, 9 ), src.next() , "expected row to be 7,9" )
+        self.assertEquals(( 11, 11 ), src.next() , "expected row to be 11,11" )
+        
+        try:
+            r = src.next()
+            self.fail( "expected no more rows, got %s " % (r, ) )
+        except StopIteration:
+            pass
         
         src.close()
 
         #-----------------------------------------------------------
         src = self.gp.make_source( MySQLSelect("select a from test where a > 7") )
         
-        self.assertEquals((11,), src.nextRow() , "expected row to be 11" )
-        self.assertNull( src.nextRow(), "expected next row to be null" )
+        self.assertEquals((11,), src.next() , "expected row to be 11" )
+        
+        try:
+            r = src.next()
+            self.fail( "expected no more rows, got %s " % (r, ) )
+        except StopIteration:
+            pass
         
         src.close()
     
@@ -79,7 +88,7 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
 
     def test_UnbufferedSelectInto(self):
         self._make_table( "test", "a INT NOT NULL, b INT NOT NULL" )
-        self.gp.set_unbuffered(true)
+        self.gp.set_unbuffered(True)
         self.gp.mysql_query( "INSERT INTO test VALUES (3, 8)" )
         self.gp.mysql_query( "INSERT INTO test VALUES (7, 9)" )
         self.gp.mysql_query( "INSERT INTO test VALUES (11, 11)" )
@@ -93,9 +102,9 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
         self.assertEquals( [ ( 3, 8 ), ( 7, 9 ), ( 11, 11 ) ], data )
     
     def assertNextRowEquals(self, expected, res):
-		row = self.gp.mysql_fetch_assoc(res)
-		self.assertEquals({ 'a': 4, 'b': 5 }, row , "expected row to be %s, got %s" % (expected, row) )
-		
+        row = self.gp.mysql_fetch_assoc(res)
+        self.assertEquals({ 'a': 4, 'b': 5 }, row , "expected row to be %s, got %s" % (expected, row) )
+        
     def test_TempSink(self):
         snk = self.gp.make_temp_sink( MySQLTable("?", "a", "b") )
         table = snk.getTable()
@@ -174,7 +183,7 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
         stats = self.gp.capture_stats_map()
         self.assertEquals( 0, stats['ArcCount'], "ArcCount" )
 
-        #self.gp.setDebug(true)
+        #self.gp.setDebug(True)
         src = self.gp.add_arcs_from( "select a, b from test" )
         src.close()
         
@@ -219,7 +228,7 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
         self.assertNextRowEquals({ 'n': 12 }, res , "expected row to be 12, got %s" % r )
         self.assertNextRowEquals({ 'n': 111 }, res , "expected row to be 111, got %s" % r )
         self.assertNextRowEquals({ 'n': 112 }, res , "expected row to be 112, got %s" % r )
-        self.assertFalse(  self.gp.mysql_fetch_assoc(res), "expected next row to be false" )
+        self.assertFalse(  self.gp.mysql_fetch_assoc(res), "expected next row to be False" )
         
         self.gp.mysql_free_result(res)
         
@@ -238,7 +247,7 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
         self.assertNextRowEquals({ 'n': 12 }, res , "expected row to be 12, got %s" % r )
         self.assertNextRowEquals({ 'n': 111 }, res , "expected row to be 111, got %s" % r )
         self.assertNextRowEquals({ 'n': 112 }, res , "expected row to be 112, got %s" % r )
-        self.assertFalse(  self.gp.mysql_fetch_assoc(res), "expected next row to be false" )
+        self.assertFalse(  self.gp.mysql_fetch_assoc(res), "expected next row to be False" )
         
         self.gp.mysql_free_result(res)
     
@@ -263,7 +272,7 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
         self.assertNextRowEquals({ 'n': 12 }, res , "expected row to be 12, got %s" % r )
         self.assertNextRowEquals({ 'n': 111 }, res , "expected row to be 111, got %s" % r )
         self.assertNextRowEquals({ 'n': 112 }, res , "expected row to be 112, got %s" % r )
-        self.assertFalse(  self.gp.mysql_fetch_assoc(res), "expected next row to be false" )
+        self.assertFalse(  self.gp.mysql_fetch_assoc(res), "expected next row to be False" )
         
         self.gp.mysql_free_result(res)
         snk.drop()
@@ -280,7 +289,7 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
         self.assertNextRowEquals({ 'n': 12 }, res , "expected row to be 12, got %s" % r )
         self.assertNextRowEquals({ 'n': 111 }, res , "expected row to be 111, got %s" % r )
         self.assertNextRowEquals({ 'n': 112 }, res , "expected row to be 112, got %s" % r )
-        self.assertFalse(  self.gp.mysql_fetch_assoc(res), "expected next row to be false" )
+        self.assertFalse(  self.gp.mysql_fetch_assoc(res), "expected next row to be False" )
         
         self.gp.mysql_free_result(res)
         snk.drop()
@@ -297,7 +306,7 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
         self.assertNextRowEquals({ 'n': 12 }, res , "expected row to be 12, got %s" % r )
         self.assertNextRowEquals({ 'n': 111 }, res , "expected row to be 111, got %s" % r )
         self.assertNextRowEquals({ 'n': 112 }, res , "expected row to be 112, got %s" % r )
-        self.assertFalse(  self.gp.mysql_fetch_assoc(res), "expected next row to be false" )
+        self.assertFalse(  self.gp.mysql_fetch_assoc(res), "expected next row to be False" )
         
         self.gp.mysql_free_result(res)
         snk.drop()
@@ -316,7 +325,7 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
         self.assertNextRowEquals({ 'n': 12 }, res , "expected row to be 12, got %s" % r )
         self.assertNextRowEquals({ 'n': 111 }, res , "expected row to be 111, got %s" % r )
         self.assertNextRowEquals({ 'n': 112 }, res , "expected row to be 112, got %s" % r )
-        self.assertFalse(  self.gp.mysql_fetch_assoc(res), "expected next row to be false" )
+        self.assertFalse(  self.gp.mysql_fetch_assoc(res), "expected next row to be False" )
         
         self.gp.mysql_free_result(res)
     

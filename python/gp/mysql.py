@@ -1,49 +1,47 @@
 from client import *
 
+import types
 import re
 import MySQLdb
 
 class MySQLSource (DataSource):
     
-    def __init__(self, glue, result, table):
-        self.glue = glue
+    def __init__(self, result, table):
         self.result = result
         self.table = table
     
 
-    def nextRow (self):
-        raw = self.glue.mysql_fetch_assoc( self.result )
+    def next(self):
+        # XXX: if we knew that the order of fields in the result set is the same
+        #      as the order given in self.table, we could just use result.fetchone()
         
-        if not raw: return None
+        raw = self.result.fetch_dict(  )
         
-        row = []
+        if not raw: 
+            raise StopIteration()
         
-        for f in self.table.get_fields():
-            row.append( raw.get( f ) )
-        
+        row = ( raw.get( f ) for f in self.table.get_fields() )
                 
         return tuple( row )
     
     
     def close (self):
-        self.glue.mysql_free_result( self.result )
+        self.result.close()
     
 
 def strip_qualifier(self, n ):
     return re.sub(r'^.*\.', '', n)
 
-class MySQLTable:
+class MySQLTable (object):
 
-    def __init__(self, name):
+    def __init__(self, name, *fields):
         self.name = name
         
-        self.field_definitions = []
-        self.key_definitions = []
+        self.field_definitions = {}
+        self.key_definitions = {}
         
-        args = func_get_args()
-        
-        if ( isinstance(args[1], (tuple, list) ) ): self.fields = args[1]
-        else: self.fields = args[1:]
+        if ( isinstance(fields[0], (tuple, list) ) ): self.fields = fields[0]
+        else: self.fields = fields
         
         for f in self.fields:
             if ( not f ): raise gpUsageException( "empty field name!" )
@@ -97,7 +95,7 @@ class MySQLTable:
       
 
     def get_field_list(self,):
-        return implode(", ", self.fields)
+        return ", ".join( self.fields )
       
     
     def get_field_definitions(self,):
@@ -105,14 +103,16 @@ class MySQLTable:
         
         for f in self.fields:
             if ( not f ): continue #XXX: should not happen!
-            if ( not s) : s+= ", "
+            if ( len(s) > 0 ) : s+= ", "
             
-            if ( not self.field_definitions[f]) : s += f + " %s" % self.field_definitions[f]
-            else: s += f + " INT NOT NULL "
+            if ( f in self.field_definitions ) : 
+                s += " %s %s " % (f, self.field_definitions[f])
+            else: 
+                s += f + " INT NOT NULL "
         
         
         for k in self.key_definitions:
-            if ( not s): s+= ", "
+            if ( len(s)>0 ): s+= ", "
             s += k
         
 
@@ -137,7 +137,7 @@ class MySQLTable:
 class MySQLSelect (MySQLTable):
    
     def __init__(self, select):
-        m = re.search(r'^\s*select\s+(.*?)\s+from\s+([^ ]+)(?:\s+(.*))?', select, re.INSENSITIVE + re.SINGLE_LINE)
+        m = re.search(r'^\s*select\s+(.*?)\s+from\s+([^ ]+)(?:\s+(.*))?', select, flags = re.IGNORECASE + re.DOTALL)
         
         if m:
             self.select = select
@@ -145,8 +145,9 @@ class MySQLSelect (MySQLTable):
             n = m.group(2)
             ff = re.split(r'\s*,\s*', m.group(1) )
             
-            for i, f in ff:
-                f = re.sub(r'^.*\s+AS\s+', '', f, re.INSENSITIVE) # use alias if defined
+            for i in range(len(ff)):
+                f = ff[i]
+                f = re.sub(r'^.*\s+AS\s+', '', f, flags = re.IGNORECASE) # use alias if defined
                 ff[i] = f
             
             
@@ -165,14 +166,14 @@ class MySQLSelect (MySQLTable):
       
 
 
-class MySQLInserter:
+class MySQLInserter (object):
     def __init__ ( self, glue, table ):
         self.glue = glue
         self.table = table
         self.fields = None
     
     def insert(self, values ):
-        raise Error("abstract method")
+        raise NotImplementedError( "`insert()' not implemented by %s" % self.__class__ )
 
     def flush (self):
         pass
@@ -213,32 +214,28 @@ class MySQLBufferedInserter (MySQLSimpleInserter):
         vlist = self.as_list(values)
         max = self.glue.get_max_allowed_packet()
 
-        if not self.buffer and ( strlen(self.buffer) + strlen(vlist) + 2 ) >= max  :
+        if len(self.buffer)>0 and ( len(self.buffer) + len(vlist) + 2 ) >= max  :
             self.flush()
         
         
-        if self.buffer :
+        if len(self.buffer) == 0:
             self.buffer = self._insert_command()
             self.buffer += " VALUES "
         else:
             self.buffer += ", "
         
-        
         self.buffer += vlist
 
-        if strlen(self.buffer) >= max :
+        if len(self.buffer) >= max :
             self.flush()
         
     
     
     def flush (self):
-        if not  self.buffer  :
-            #print "*** {self.buffer ***"
+        if len(self.buffer)>0:
+            #print "*** self.buffer ***"
             self.glue.mysql_query( self.buffer )
             self.buffer = ""
-        
-    
-
 
 
 class MySQLSink (DataSink):
@@ -286,6 +283,18 @@ class MySQLTempSink (MySQLSink):
 
     def getTableName (self):
         return self.table
+        
+def _fetch_dict( cursor ):
+    r = cursor.fetchone()
+    if r is None: return None
+
+    row = {}
+    
+    for i in range(len(cursor.description)):
+        d = cursor.description[ i ]
+        row[ d[0] ] = r[ i ]
+    
+    return row
 
 class MySQLGlue (Connection):
     
@@ -296,17 +305,19 @@ class MySQLGlue (Connection):
         self.unbuffered = False
 
         self.addCallHandler( self.gp_mysql_call_handler )
+        
+        self.max_allowed_packet = None
     
     
     def set_unbuffered(self, unbuffered ):
         self.unbuffered = unbuffered
     
     
-    def mysql_connect(self, server = None, username = None, password = None, db = None ):
+    def mysql_connect( self, server, username, password, db ):
         #FIXME: connection charset, etc!
         
         try:
-            self.connection = MySQLdb.connect(host=server, user=username, passwd=password, db=db)
+            self.connection = MySQLdb.connect(host=server, user=username, passwd=password, db = db) 
         except MySQLdb.Error, e:
             try:
                 raise gpClientException( "Failed to connect! MySQL Error %s: %s" % (e.args[0], e.args[1]) )
@@ -318,6 +329,32 @@ class MySQLGlue (Connection):
         
         return True
     
+    def mysql_unbuffered_query( self, sql ):
+        return self.mysql_query( sql, True )
+        
+    def mysql_query( self, sql, unbuffered = None ):
+        if unbuffered is None:
+            unbuffered = self.unbuffered
+            
+        try:
+            cursor = self.connection.cursor()
+            #TODO: apply buffered/unbuffered
+            
+            cursor.execute( sql )
+            
+            m = types.MethodType(_fetch_dict, cursor, cursor.__class__)
+            setattr(cursor, "fetch_dict", m)
+            
+            return cursor
+        except MySQLdb.Error, e:
+            q = sql.replace('/\s+/', ' ')
+            if ( len(q) > 255 ): q = q[:252] + '...'
+            
+            try:
+                raise gpClientException( "Query failed! MySQL Error %s: %s\nQuery was: %s" % (e.args[0], e.args[1], q) )
+            except IndexError:
+                raise gpClientException( "Query failed! MySQL Error: %s\nQuery was: %s" % (e, q) )
+        
 
     def set_mysql_connection(self, connection ):
         self.connection = connection
@@ -339,16 +376,16 @@ class MySQLGlue (Connection):
             cmd = re.sub(r'-(from|into)?', '', cmd)
             action = m.group(1)
             
-            c = count(args)
+            c = len(args)
             if not c :
-                raise gpUsageException("expected last argument to be a table spec; %s" % args)
+                raise gpUsageException("expected last argument to be a table spec; args: %s" % (args, ))
             
             
             t = args[c-1]
             args = args[0:c-1]
             
             if isinstance(t, (str, unicode)) :
-                if ( re.search( r'^.*select\s+i', t, re.INSENSITIVE) ): t = MySQLSelect(t)
+                if ( re.search( r'^.*select\s+i', t, flags = re.IGNORECASE) ): t = MySQLSelect(t)
                 else: t = re.split( r'\s+|\s*,\s*', t )
             
             
@@ -375,49 +412,38 @@ class MySQLGlue (Connection):
         return True
     
     
-    def __make_mysql_closure( self, name, args ):
+    def __make_mysql_closure( self, name ):
         rc = False
         
-        if method_exists( this, name ) :
-            return call_user_func_array( array(this, cmd), args )
-        
-        
-        if self.unbuffered  and  name == 'mysql_query' :
-            name = 'mysql_unbuffered_query'
-        
-        
-        res = call_user_func_array( name, args )
-
-        if not res :
-            errno = mysql_errno( self.connection )
+        if not hasattr(self.connection, name):
+            raise gpUsageException( "unknown mysql function: %s" % name )
             
-            if errno :
-                msg = "MySQL Error %i: %s" % (errno, mysql_error())
-                
-                if name == 'mysql_query'  or  name == 'mysql_unbuffered_query' :
-                    sql = str_replace('/\s+/', ' ', args[0])
-                    if ( strlen(sql) > 255 ): sql = substr(sql, 0, 252) + '+..'
-                    
-                    msg+= "\nQuery was: %s" % sql
-                
-                
-                raise gpClientException( msg )
-            
+        f = getattr(self.connection, name)
         
-
-        return res
+        def call_mysql( *args ):
+            try:
+                res = f( *args ) # note: f is bound to self.connection
+                return res
+            except MySQLdb.Error, e:
+                try:
+                    raise gpClientException( "MySQL %s failed! Error %s: %s" % (name, e.args[0], e.args[1]) )
+                except IndexError:
+                    raise gpClientException( "MySQL %s failed! Error: %s" % (name, e) )
+            
+        return call_mysql
     
-    
-    def __call(self, name, args ): #FIXME!
+    def __getattr__( self, name ): 
         if name.startswith('mysql_'):
-            return self.__call_mysql(name, args)
+            f = self.__make_mysql_closure(name[6:])
+            
+            setattr(self, name, f) #re-use closure!
+            
+            return f
         else:
-            return super(MySQLGlue, self).__call(name, args)
-    
+            return super(MySQLGlue, self).__getattr__(name)
     
     def quote_string (self, s ): #TODO: charset
-        return "'" + mysql_real_escape_string( s ) + "'"
-    
+        return "'" + self.connection.escape_string( s ) + "'"
     
     def as_list (self, values ):
         sql = "("
@@ -428,9 +454,9 @@ class MySQLGlue (Connection):
             else: first = False
             
             t = type(v)
-            if ( t is NoneType ): sql+= "None"
-            elif ( t == int ): sql+= v
-            elif ( t == float ): sql+= v
+            if ( v is None ): sql+= "None"
+            elif ( t == int ): sql+= "%i" % v
+            elif ( t == float ): sql+= "%d" % v
             elif ( t == str or t == unicode ): sql+= self.quote_string(v) #TODO: charset...
             else: raise gpUsageException("bad value type: %s" % gettype(v))
         
@@ -442,9 +468,8 @@ class MySQLGlue (Connection):
     id = 1
     
     def next_id (self):
-        id += 1
-        return id
-     
+        MySQLGlue.id += 1
+        return MySQLGlue.id
     
     def drop_temp_table (self, spec ):
         sql = "DROP TEMPORARY TABLE %s" % spec.get_name()
@@ -468,26 +493,28 @@ class MySQLGlue (Connection):
     
 
     def mysql_query_value (self, sql ):
-        res = self.mysql_query( sql )
-        a = self.mysql_fetch_row( res )
-        self.mysql_free_result( res )
+        r = self.mysql_query_record( sql )
+        
+        if ( not 1 ): return None
+        else: return r[0]
+    
+    def mysql_query_record (self, sql ):
+        cursor = self.mysql_query( sql )
+        a = cursor.fetchone()
+        cursor.close()
         
         if ( not a ): return None
-        else: return a[0]
-    
+        else: return a
     
     def set_max_allowed_packet (self, size ):
         self.max_allowed_packet = size
     
-    
     def get_max_allowed_packet (self):
-        if  self.max_allowed_packet  :
+        if self.max_allowed_packet is None:
             self.max_allowed_packet = self.mysql_query_value("select @@max_allowed_packet")
-        
 
-        if  self.max_allowed_packet  :
+        if self.max_allowed_packet is None:
             self.max_allowed_packet = 16 * 1024 * 1024 #fall back to MySQL's default of 16MB
-        
         
         return self.max_allowed_packet
     
@@ -502,7 +529,7 @@ class MySQLGlue (Connection):
         
         
         res = self.mysql_query( sql )
-        src = MySQLSource( this, res, table )
+        src = MySQLSource( res, table )
         
         c = self.copy( src, sink, '+' )
         src.close()
@@ -511,14 +538,14 @@ class MySQLGlue (Connection):
     
     
     def _new_inserter(self, table ):
-        return MySQLBufferedInserter( this, table )
+        return MySQLBufferedInserter( self, table )
     
     
     def make_temp_sink (self, table ):
         table = self.make_temp_table(table)
         
         ins = self._new_inserter(table)
-        sink = MySQLTempSink( ins, this, table )
+        sink = MySQLTempSink( ins, self, table )
         
         return sink
     
@@ -533,14 +560,14 @@ class MySQLGlue (Connection):
     def make_source (self, table, big = False ):
         sql = table._get_select()
         
-        if not re.search(r'\s+ORDER\s+BY\s+', sql, re.INSENSITIVE) :
+        if not re.search(r'\s+ORDER\s+BY\s+', sql, flags = re.IGNORECASE) :
             sql += ' ' + table.get_order_by()
         
         
         if (big): res = self.mysql_unbuffered_query(sql)
         else: res = self.mysql_query(sql)
         
-        src = MySQLSource( this, res, table )
+        src = MySQLSource( res, table )
         return src
     
 
@@ -566,7 +593,7 @@ class MySQLGlue (Connection):
     
     def close(self):
         self.mysql_close()
-        return super(MySQLSink, self).close()
+        return super(MySQLGlue, self).close()
 
      
     @staticmethod
@@ -594,14 +621,12 @@ class MySQLGlue (Connection):
         
         print ""
         while True:
-            row = self.mysql_fetch_assoc( res )
+            row = res.fetch_dict()
             if not row: break
             
             if keys is None :
-                keys = array_keys( row )
-
                 s = ""
-                for k in keys:
+                for k in row.keys():
                     s += k
                     s += "\t"
                 
@@ -609,7 +634,7 @@ class MySQLGlue (Connection):
                 print s
             
             s = ""
-            for k, v in row:
+            for v in row:
                     s += v
                     s += "\t"
             

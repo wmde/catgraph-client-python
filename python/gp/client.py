@@ -134,7 +134,7 @@ class DataSource (object):
         @return an array representing the next row.
     
         """
-        raise NotImplementedError( "`next()' called in abstract class." )
+        raise NotImplementedError( "`next()' not implemented by %s" % self.__class__ )
     
     def close( self ):
         """ Close the data source and free resources allocated by this object.
@@ -556,7 +556,7 @@ class Transport(object): # abstract
         constructor of the respective subclass.
 
         """
-        raise NotImplementedError("`connect()' called in abstract class.")
+        raise NotImplementedError("`connect()' not implemented by %s" % self.__class__)
     
     def send(self, s):
         """Sends a string to the peer.
@@ -564,7 +564,7 @@ class Transport(object): # abstract
         This is the an operation of the line based communication protocol.
     
         """
-        raise NotImplementedError("`send()' called in abstract class.")
+        raise NotImplementedError("`send()' not implemented by %s" % self.__class__)
     
     def receive(self):
         """Receives a string from the peer.
@@ -572,7 +572,7 @@ class Transport(object): # abstract
         This is the a operation of the line based communication protocol.
 
         """
-        raise NotImplementedError("`receive()' called in abstract class.")
+        raise NotImplementedError("`receive()' not implemented by %s" % self.__class__)
     
     def eof(self):
         """True after detection of end of data stream from the peer"""
@@ -585,7 +585,7 @@ class Transport(object): # abstract
         coming from the peer.
     
         """
-        raise NotImplementedError("`make_source()' called in abstract class.")
+        raise NotImplementedError("`make_source()' not implemented by %s" % self.__class__)
     
     def make_sink(self):
         """Create an instance of DataSink
@@ -593,7 +593,7 @@ class Transport(object): # abstract
         for writing data to the data stream going to the peer.
     
         """
-        raise NotImplementedError("`make_sink()' called in abstract class.")
+        raise NotImplementedError("`make_sink()' not implemented by %s" % self.__class__)
  
     def checkPeer(self): 
         """Attempts to check if the peer is still responding. 
@@ -1626,7 +1626,8 @@ class Connection(object):
           " &&! traverse-successors %s %s " ) % (id, depth, without, without_depth),
           source, sink)
          
-    
+
+    @staticmethod
     def isValidCommandName(name):   #static #OK
         """Check if the given name is a valid command name.
 
@@ -1641,6 +1642,7 @@ class Connection(object):
         return re.match('^[a-zA-Z_][-\w]*$', name)
          
     
+    @staticmethod
     def isValidCommandString(command): #static # fast OK
         """Check if the given string passes some sanity checks.
 
@@ -1661,6 +1663,7 @@ class Connection(object):
         return True
          
     
+    @staticmethod
     def isValidCommandArgument(arg, strict=True): #static #OK
         """ Check if the given string is a valid argument.
 
@@ -1882,13 +1885,6 @@ class Connection(object):
     
         """
         return Connection(SlaveTransport(command, cwd, env))
-        
-    new_client_connection = staticmethod(new_client_connection)        
-    new_slave_connection = staticmethod(new_slave_connection)
-    isValidCommandName = staticmethod(isValidCommandName)
-    isValidCommandString = staticmethod(isValidCommandString)
-    isValidCommandArgument = staticmethod(isValidCommandArgument)
-
 
 def array_column(a, col):
     """Extracts a column from a tabular structure
