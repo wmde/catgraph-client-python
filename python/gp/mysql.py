@@ -3,6 +3,7 @@ from client import *
 import types
 import re
 import MySQLdb, MySQLdb.cursors
+import warnings
 
 class MySQLSource (DataSource):
     
@@ -38,7 +39,7 @@ class MySQLTable (object):
         self.name = name
         
         self.field_definitions = {}
-        self.key_definitions = {}
+        self.key_definitions = []
         
         if ( isinstance(fields[0], (tuple, list) ) ): self.fields = fields[0]
         else: self.fields = fields
@@ -77,7 +78,7 @@ class MySQLTable (object):
 
     
     def get_field(self, n ):
-        return self.fields.get( n-1 )
+        return self.fields[ n-1 ]
     
     
     def get_field1(self, basename_only = False ):
@@ -232,7 +233,6 @@ class MySQLBufferedInserter (MySQLSimpleInserter):
     
     def flush (self):
         if len(self.buffer)>0:
-            #print "*** self.buffer ***"
             self.glue.mysql_query( self.buffer )
             self.buffer = ""
 
@@ -315,13 +315,16 @@ class MySQLGlue (Connection):
     def mysql_connect( self, server, username, password, db ):
         #FIXME: connection charset, etc!
         
-        try:
-            self.connection = MySQLdb.connect(host=server, user=username, passwd=password, db = db) 
-        except MySQLdb.Error, e:
-            try:
-                raise gpClientException( "Failed to connect! MySQL Error %s: %s" % (e.args[0], e.args[1]) )
-            except IndexError:
-                raise gpClientException( "Failed to connect! MySQL Error: %s" % e )
+        #try:
+        self.connection = MySQLdb.connect(host=server, user=username, passwd=password, db = db) 
+        
+        #XXX: would be nice to wrap the exception and provide additional info. 
+        #     but without exception chaining, we lose the traceback. wich is bad.
+        #except MySQLdb.Error, e:
+        #    try:
+        #        raise gpClientException( "Failed to connect! MySQL Error %s: %s" % (e.args[0], e.args[1]) )
+        #    except IndexError:
+        #        raise gpClientException( "Failed to connect! MySQL Error: %s" % e )
         
         if not self.connection :
             raise gpClientException( "Failed to connect! (unknown error)" )
@@ -335,45 +338,50 @@ class MySQLGlue (Connection):
         if unbuffered is None:
             unbuffered = self.unbuffered
             
-        try:
-            if unbuffered:
-                if dict_rows:
-                    # no buffering, returns dicts
-                    cursor = MySQLdb.cursors.SSDictCursor(self.connection) # TESTME
-                else:
-                    # no buffering, returns tuples
-                    cursor = MySQLdb.cursors.SSCursor(self.connection) # TESTME
+        if unbuffered:
+            if dict_rows:
+                # no buffering, returns dicts
+                cursor = MySQLdb.cursors.SSDictCursor(self.connection) # TESTME
             else:
-                if dict_rows:
-                    # buffers result, returns dicts
-                    cursor = MySQLdb.cursors.DictCursor(self.connection) # TESTME
-                else:
-                    # default: buffered tuples
-                    cursor = MySQLdb.cursors.Cursor(self.connection) 
-            
-            cursor = self.connection.cursor()
-            #TODO: apply buffered/unbuffered
-            
-            cursor.execute( sql )
-            
-            if not dict_rows:
-                # HACK: glue a fetch_dict method to a cursor that natively returns sequences from fetchone()
-                m = types.MethodType(_fetch_dict, cursor, cursor.__class__)
-                setattr(cursor, "fetch_dict", m)
+                # no buffering, returns tuples
+                cursor = MySQLdb.cursors.SSCursor(self.connection) # TESTME
+        else:
+            if dict_rows:
+                # buffers result, returns dicts
+                cursor = MySQLdb.cursors.DictCursor(self.connection) # TESTME
             else:
-                # make fetch_dict an alias for fetchone
-                cursor.fetch_dict = cursor.fetchone # TESTME
+                # default: buffered tuples
+                cursor = MySQLdb.cursors.Cursor(self.connection) 
+        
+        cursor = self.connection.cursor()
+        #TODO: apply buffered/unbuffered
+        
+        with warnings.catch_warnings():
+            #ignore MySQL warnings. use cursor.nfo() to get them.
+            warnings.simplefilter("ignore")
             
-            return cursor
+            cursor.execute( sql ) 
+        
+        if not dict_rows:
+            # HACK: glue a fetch_dict method to a cursor that natively returns sequences from fetchone()
+            m = types.MethodType(_fetch_dict, cursor, cursor.__class__)
+            setattr(cursor, "fetch_dict", m)
+        else:
+            # make fetch_dict an alias for fetchone
+            cursor.fetch_dict = cursor.fetchone # TESTME
+        
+        return cursor
+
+        #XXX: would be nice to wrap the exception and provide additional info. 
+        #     but without exception chaining, we lose the traceback. wich is bad.
+        #except MySQLdb.Error as e:
+            #q = sql.replace('/\s+/', ' ')
+            #if ( len(q) > 255 ): q = q[:252] + '...'
             
-        except MySQLdb.Error, e:
-            q = sql.replace('/\s+/', ' ')
-            if ( len(q) > 255 ): q = q[:252] + '...'
-            
-            try:
-                raise gpClientException( "Query failed! MySQL Error %s: %s\nQuery was: %s" % (e.args[0], e.args[1], q) )
-            except IndexError:
-                raise gpClientException( "Query failed! MySQL Error: %s\nQuery was: %s" % (e, q) )
+            #try:
+            #    raise gpClientException( "Query failed! MySQL Error %s: %s\nQuery was: %s" % (e.args[0], e.args[1], q) )
+            #except IndexError:
+            #    raise gpClientException( "Query failed! MySQL Error: %s\nQuery was: %s" % (e, q) )
         
 
     def set_mysql_connection(self, connection ):
@@ -443,14 +451,17 @@ class MySQLGlue (Connection):
         f = getattr(self.connection, name)
         
         def call_mysql( *args ):
-            try:
-                res = f( *args ) # note: f is bound to self.connection
-                return res
-            except MySQLdb.Error, e:
-                try:
-                    raise gpClientException( "MySQL %s failed! Error %s: %s" % (name, e.args[0], e.args[1]) )
-                except IndexError:
-                    raise gpClientException( "MySQL %s failed! Error: %s" % (name, e) )
+            #try:
+            res = f( *args ) # note: f is bound to self.connection
+            return res
+            
+            #XXX: would be nice to wrap the exception and provide additional info. 
+            #     but without exception chaining, we lose the traceback. wich is bad.
+            #except MySQLdb.Error, e:
+                #try:
+                #    raise gpClientException( "MySQL %s failed! Error %s: %s" % (name, e.args[0], e.args[1]) )
+                #except IndexError:
+                #    raise gpClientException( "MySQL %s failed! Error: %s" % (name, e) )
             
         return call_mysql
     

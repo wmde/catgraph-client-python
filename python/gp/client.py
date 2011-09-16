@@ -194,7 +194,11 @@ class ArraySource( DataSource ):
         if self.index < self.data_length:
             row = self.data[self.index]
             self.index = self.index + 1
+            
             if not isinstance(row, (list,tuple)):
+                if not isinstance(row, (str, unicode, int, long)):
+                    raise gpUsageException("data must consist of strings or integers")
+                    
                 row = (row, )
             return row
         else:
@@ -1334,7 +1338,7 @@ class Connection(object):
             command = [cmd]
     
             for arg in arguments:
-                if isinstance(arg, (tuple, list)):
+                if isinstance(arg, (tuple, list, set)):
                     source = ArraySource(arg)
                 elif isinstance(arg, (DataSource, DataSink)):
                     if isinstance(arg, DataSource):
@@ -1347,7 +1351,7 @@ class Connection(object):
                           + " or DataSink. Found %s" % str(type(arg)))
                 elif not arg:
                     continue
-                elif isinstance(arg, (str, int)):
+                elif isinstance(arg, (str, unicode, int, long)):
                     command.append(arg)
                 else:
                     raise gpUsageException(
@@ -1473,7 +1477,7 @@ class Connection(object):
             self.tainted = True
             raise gpProtocolException("connection closed by peer!")
             
-        if isinstance(command, (list, tuple)):
+        if isinstance(command, (list, tuple, set)):
             if not command:
                 raise gpUsageException("empty command!")
                 
@@ -1487,7 +1491,7 @@ class Connection(object):
                 
             strictArgs = self.strictArguments
             for c in command:
-                if not isinstance(c, (str, unicode, int)):
+                if not isinstance(c, (str, unicode, int, long)):
                     raise gpUsageException(
                       "invalid argument type: %s" % type(c).__name__)
                       
@@ -1682,7 +1686,7 @@ class Connection(object):
         if not arg:
             return False
         
-        if not type(arg) in (str, unicode, int):
+        if not type(arg) in (str, unicode, int, long):
             return False
         
         if strict:

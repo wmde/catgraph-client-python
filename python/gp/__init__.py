@@ -1,1 +1,1 @@
-__all__ = [ 'client' ]
+__all__ = [ 'client', 'mysql', 'mediawiki' ]
