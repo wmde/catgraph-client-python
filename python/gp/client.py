@@ -49,6 +49,7 @@ import socket
 import time
 import subprocess
 import inspect
+import types
 
 LINEBREAK = "\r\n"
 """Linebreak to use when talking to GraphServ or GraphCore instances.
@@ -62,7 +63,7 @@ CLIENT_PROTOCOL_VERSION = 2
    reports a different protocol version, the conenction will be aborted."""
 
 
-def __function__ (shift = 1):
+def __function__ (shift = 1): #XXX: wtf?
     caller = inspect.stack()[shift]
     return caller[3]
 
@@ -142,10 +143,22 @@ class DataSource (object):
         close() should always be called when a data source is no longer
         needed, usually on the same level as the data source object was
         created. After close() has been called on a data source object,
-        the behavior of calling nextRow() on that object is undefined.
+        the behavior of calling next() on that object is undefined.
     
         """
         pass    # noop
+        
+    def drain( self ): #TODO: PORT TO PHP
+		""" Drains the source and returns all data rows as an array.
+		"""
+		
+		data = []
+		
+		for r in self:
+			data.append(r)
+			
+		self.close()
+		return data
 
 
 class NullSource( DataSource ):
@@ -1274,6 +1287,7 @@ class Connection(object):
             raise AttributeError("no such impl: %s" % name)
         
         #TODO: do command name normalization outside the closure!
+        #TODO: allow named arguments!
 
         # A closure:
         def exec_command(*arguments):
@@ -1289,6 +1303,7 @@ class Connection(object):
             
             source = None
             sink = None
+            row_munger = None #TODO: PORT TO PHP
             
             if re.match('^try-', cmd):
                 cmd = cmd[4:]
@@ -1340,6 +1355,8 @@ class Connection(object):
             for arg in arguments:
                 if isinstance(arg, (tuple, list, set)):
                     source = ArraySource(arg)
+                elif type(arg) == types.GeneratorType:
+                    source = ArraySource(arg)
                 elif isinstance(arg, (DataSource, DataSink)):
                     if isinstance(arg, DataSource):
                         source = arg
@@ -1351,6 +1368,8 @@ class Connection(object):
                           + " or DataSink. Found %s" % str(type(arg)))
                 elif not arg:
                     continue
+                elif callable(arg):
+                    row_munger = arg
                 elif isinstance(arg, (str, unicode, int, long)):
                     command.append(arg)
                 else:
@@ -1371,7 +1390,7 @@ class Connection(object):
                 if self.exec_handlers:
                     handler_vars = {'command': command, 'source': source, 
                                     'sink': sink, 'has_output': has_output,
-                                    'status': status}
+                                    'status': status, 'row_munger': row_munger}
 
                     for handler in self.exec_handlers:
                         go_on = handler( self, handler_vars )
@@ -1385,6 +1404,7 @@ class Connection(object):
                     sink = handler_vars['sink']
                     has_output = handler_vars['has_output']
                     status = handler_vars['status']
+                    row_munger = handler_vars['row_munger']
 
                 if do_execute:
                     func = re.sub('-', '_', command[0] + '_impl')
@@ -1396,7 +1416,7 @@ class Connection(object):
                         f = getattr(self, func)
                         status = f( *args )
                     else:
-                        status = self.execute(command, source, sink)
+                        status = self.execute(command, source, sink, row_munger = row_munger)
                          
                      
             except catchThis as e:
@@ -1431,7 +1451,7 @@ class Connection(object):
         return exec_command 
          
     
-    def execute(self, command, source=None, sink=None):
+    def execute(self, command, source=None, sink=None, row_munger=None):
         """ Applies a command to the graph, i.e. runs the command on the peer.
     
         Note: this method implements the protocol used to interact with the peers,
@@ -1451,6 +1471,10 @@ class Connection(object):
         @type  sink: DataSink
         @param sink: the data sink to pass the commands output to
                      (default: null)
+        @param row_munger: a callback function to be invoked for every row 
+               copied (optional). The return value from the munger 
+               replaces the original row. If the munger function returns 
+               None or False, the row is skipped.
         @rtype:  string
         @return: the status string returned by the command
         @raise: gpProtocolException if a communication error ocurred while
@@ -1547,7 +1571,7 @@ class Connection(object):
         self._trace(__function__(), "source", type(source))
 
         if ( source ):
-            self._copyFromSource( source )
+            self._copyFromSource( source, row_munger = row_munger )
         
         rec = self.transport.receive()
         self._trace(__function__(), "<<< ", rec)
@@ -1591,7 +1615,7 @@ class Connection(object):
                 sink = NullSink.instance
                 
             # note: we need to slurp the result in any case!
-            self._copyToSink(sink)
+            self._copyToSink(sink, row_munger = row_munger)
         
             self.__command_has_output = True
         else:
@@ -1609,7 +1633,7 @@ class Connection(object):
     
 
     def traverse_successors_without_impl(
-      self, id, depth, without, without_depth, source, sink):
+      self, id, depth, without, without_depth, source, sink, row_munger = None):
         """Implements a 'fake' command traverse-successors-without
 
         which returns all decendants of onw nodes
@@ -1630,7 +1654,7 @@ class Connection(object):
         return self.execute(
           ( "traverse-successors %s %s " +
           " &&! traverse-successors %s %s " ) % (id, depth, without, without_depth),
-          source, sink)
+          source, sink, row_munger = row_munger)
          
 
     @staticmethod
@@ -1756,7 +1780,7 @@ class Connection(object):
             raise
         return s
     
-    def _copyFromSource(self, source ):
+    def _copyFromSource(self, source, row_munger = None):
         """Pass data from source to client line by line.
     
         Copies all data from the given source into the current command stream,
@@ -1774,7 +1798,7 @@ class Connection(object):
         """
         sink = self.transport.make_sink()
         self._trace(__function__(), "source", type(source))
-        self.copy(source, sink, ' > ')
+        self.copy(source, sink, ' > ', row_munger = row_munger)
         # source.close()        # to close or not to close...
         self.transport.send( LINEBREAK )     #XXX: flush again??
         self._trace(__function__(), "copy complete.")
@@ -1790,7 +1814,7 @@ class Connection(object):
         
          
     
-    def _copyToSink(self, sink=None):
+    def _copyToSink(self, sink=None, row_munger = None):
         """Pass data from peer to sink line by line.
     
         Copies all data from the command response into the given sink,
@@ -1809,7 +1833,7 @@ class Connection(object):
         """
         source = self.transport.make_source()
         self._trace(__function__(), "sink", type(sink))
-        self.copy(source, sink, ' < ' )
+        self.copy(source, sink, ' < ', row_munger = row_munger )
         self._trace(__function__(), "copy complete.")
         # $source->close();     # to close or not to close...
         
@@ -1824,7 +1848,7 @@ class Connection(object):
                 # $sink->putRow( $row );
                 #  
         
-    def copy(self, source, sink=None, indicator = '<>'): #OK
+    def copy(self, source, sink=None, indicator = '<>', row_munger = None): #OK
         """Transfer all rows from a data source to a data sink.
 
         Utility method. If sink is None, all rows are read from the
@@ -1836,15 +1860,25 @@ class Connection(object):
         @type sink:  DataSink
         @param sink: sink where the rows are transferred to.
         @type indicator:  str
-        @param indicator: the message to show in debug-mode
+        @param indicator: the message prefix to show in debug-mode
+        @param row_munger: a callback function to be invoked for every row copied.
+               the return value from the munger replaces the original row.
+               If the munger function returns None or False, the row is skipped.
         
         """
         for row in source:
+            if row_munger: #TODO: PORT TO PHP
+				row = row_munger(row)
+				
+				if not row:
+					continue
+				
             if sink:
                 self._trace(__name__, indicator, row)
                 sink.putRow(row)
             else:
                 self._trace(Connection.copy, "#", row)
+                
         if ( sink ):
             sink.flush()
     
