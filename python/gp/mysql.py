@@ -297,8 +297,8 @@ def _fetch_dict( cursor ):
 
 class MySQLGlue (Connection):
     
-    def __init__(self, transport ):
-        super(MySQLGlue, self).__init__(transport)
+    def __init__(self, transport, graphname = None ):
+        super(MySQLGlue, self).__init__(transport, graphname)
         
         self.connection = None
         self.unbuffered = False
@@ -306,7 +306,6 @@ class MySQLGlue (Connection):
         self.addCallHandler( self.gp_mysql_call_handler )
         
         self.max_allowed_packet = None
-    
     
     def set_unbuffered(self, unbuffered ):
         self.unbuffered = unbuffered
@@ -635,7 +634,7 @@ class MySQLGlue (Connection):
      
     @staticmethod
     def new_client_connection(graphname, host = False, port = False ):
-        return MySQLGlue( ClientTransport(graphname, host, port) )
+        return MySQLGlue( ClientTransport(host, port), graphname ) #FIXME: PORT graphname stuff to PHP!
     
 
     @staticmethod

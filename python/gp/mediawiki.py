@@ -23,8 +23,8 @@ NS_CATEGORY_TALK = 15
 
 class MediaWikiGlue (MySQLGlue) :
     
-    def __init__( self, transport ) :
-        super(MediaWikiGlue, self).__init__(transport)
+    def __init__( self, transport, graphname ) :
+        super(MediaWikiGlue, self).__init__(transport, graphname)
         
         self.table_prefix = ""
         
@@ -118,7 +118,7 @@ class MediaWikiGlue (MySQLGlue) :
      
     @staticmethod
     def new_client_connection( graphname, host = False, port = False ) :
-        return MediaWikiGlue( ClientTransport(graphname, host, port) )
+        return MediaWikiGlue( ClientTransport(host, port), graphname ) #FIXME: PORT graphname stuff to PHP!
     
     @staticmethod
     def new_slave_connection( command, cwd = None, env = None ) :

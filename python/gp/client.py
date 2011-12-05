@@ -149,16 +149,16 @@ class DataSource (object):
         pass    # noop
         
     def drain( self ): #TODO: PORT TO PHP
-		""" Drains the source and returns all data rows as an array.
-		"""
-		
-		data = []
-		
-		for r in self:
-			data.append(r)
-			
-		self.close()
-		return data
+        """ Drains the source and returns all data rows as an array.
+        """
+        
+        data = []
+        
+        for r in self:
+            data.append(r)
+            
+        self.close()
+        return data
 
 
 class NullSource( DataSource ):
@@ -766,15 +766,6 @@ class ClientTransport(PipeTransport):
         self.hin = self.socket.makefile()
         self.hout = self.socket.makefile()
         
-        if self.graphname:
-			ok = False
-            try:
-                self.use_graph(self.graphname)
-                ok = True
-            finally:
-                if not ok:
-					self.close()
-        
         return True
          
     def close(self):
@@ -1042,7 +1033,7 @@ class Connection(object):
 
     
     
-    def __init__( self, transport=None ):
+    def __init__( self, transport=None, graphname = None ):
         """Initialize a new connection with the given instance of
         Transport.
     
@@ -1084,6 +1075,7 @@ class Connection(object):
         output"""
         self.debug = False
         """Debug mode enables lots of output to stdout."""
+        self.graphname = graphname #TODO: port this to PHP
  
     def connect(self):
         """ Connect to the peer. 
@@ -1101,6 +1093,9 @@ class Connection(object):
         """
         self.transport.connect()
         self.checkProtocolVersion()
+        
+        if self.graphname: #TODO: port this to PHP
+            self.use_graph( self.graphname )
          
     def addCallHandler( self, handler ): #OK
         """Register a call handler.
@@ -1868,11 +1863,11 @@ class Connection(object):
         """
         for row in source:
             if row_munger: #TODO: PORT TO PHP
-				row = row_munger(row)
-				
-				if not row:
-					continue
-				
+                row = row_munger(row)
+                
+                if not row:
+                    continue
+                
             if sink:
                 self._trace(__name__, indicator, row)
                 sink.putRow(row)
@@ -1901,10 +1896,7 @@ class Connection(object):
         GraphServ process is listening on.
     
         """
-        conn = Connection( ClientTransport(host, port) )
-        
-        if graphname: #FIXME: PORT to PHP!
-			conn.use_graph( graphname )
+        conn = Connection( ClientTransport(host, port), graphname ) #FIXME: PORT graphname stuff to PHP!
         
         return conn
     
