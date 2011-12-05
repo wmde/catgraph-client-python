@@ -723,16 +723,14 @@ class ClientTransport(PipeTransport):
     An implementation of PipeTransport.
     @var host
     @var port
-    @var graphname
     @var socket = False
     """
     
-    def __init__(self, graphname, host='localhost', port=PORT): #OK
+    def __init__(self, host='localhost', port=PORT): #OK
         """Initialize a new instance of ClientTransport.
 
         Responsable for a connection with GraphServ.
 
-        @param string graphname the name of the graph to connect to
         @param string host (default: 'localhost') the host the GraphServ
                process is located at
         @param int port (default: PORT) the TCP port the GraphServ
@@ -741,14 +739,14 @@ class ClientTransport(PipeTransport):
         """
         self.port = port
         self.host = host
-        self.graphname = graphname
+        #FIXME: PORT removal of self.graphname to php
         self.socket = False
         PipeTransport.__init__(self)
          
     def connect(self):
         """Connects to a remote instance of GraphServ
 
-        using the host and port provided top the constructor.
+        using the host and port provided to the constructor.
         If the connection could be established, opens the graph
         specified to the constructor.
         B{#? In PHP werden hier noch $errno und $errstr uebergeben. Philipp.}
@@ -769,11 +767,13 @@ class ClientTransport(PipeTransport):
         self.hout = self.socket.makefile()
         
         if self.graphname:
+			ok = False
             try:
                 self.use_graph(self.graphname)
-            except Exception, e:
-                self.close()
-                raise e
+                ok = True
+            finally:
+                if not ok:
+					self.close()
         
         return True
          
@@ -1901,7 +1901,12 @@ class Connection(object):
         GraphServ process is listening on.
     
         """
-        return Connection( ClientTransport(graphname, host, port))
+        conn = Connection( ClientTransport(host, port) )
+        
+        if graphname: #FIXME: PORT to PHP!
+			conn.use_graph( graphname )
+        
+        return conn
     
     @staticmethod
     def new_slave_connection(command, cwd=None, env=None): #static #OK
