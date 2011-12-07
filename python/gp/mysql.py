@@ -330,7 +330,7 @@ class MySQLGlue (Connection):
 
 		# autocommit is the default. It's even needed when reading, if we want to
 		# see changes during a persistent connection.
-        self.gp.mysql_autocommit(True)
+        self.mysql_autocommit(True)
         
         return True
     
