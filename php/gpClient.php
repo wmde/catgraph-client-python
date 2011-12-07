@@ -725,17 +725,15 @@ class gpClientTransport extends gpPipeTransport {
 	 * Initializes a new instance of gpClientTransport with the information
 	 * needed to connect to the GraphServ server instance.
 	 * 
-	 * @param string $graphname the name of the graph to connect to
 	 * @param string $host (default: 'localhost') the host the GraphServ process is located on.
 	 * @param int $port (default: GP_PORT) the TCP port the GraphServ process is listening on.
 	 */
 	public function __construct( $graphname, $host = false, $port = false ) {
-		if ( $host === false ) $host = 'localhost';
-		if ( $port === false ) $port = GP_PORT;
+		if ( !$host ) $host = 'localhost';
+		if ( !$port ) $port = GP_PORT;
 
 		$this->port = $port;
 		$this->host = $host;
-		$this->graphname = $graphname;
 	}
 	
 	/**
@@ -751,15 +749,6 @@ class gpClientTransport extends gpPipeTransport {
 		
 		$this->hin = $this->socket;
 		$this->hout = $this->socket;
-		
-		if ( $this->graphname ) {
-			try {
-				$this->use_graph($this->graphname);
-			} catch ( gpException $e ) {
-				$this->close();
-				throw $e;
-			}
-		}
 		
 		return true;
 	}
@@ -1060,9 +1049,13 @@ class gpConnection {
 	 * 
 	 * Note: Instances of gpConnection that use the appropriate transport can be created conveniently
 	 * using the static factory methods called new_xxx_connection.
+	 * 
+	 * @param gpTransport $transport the transport object
+	 * @param string $graphname (optional) the graph to connect to when connect() is called.
 	 */
-	public function __construct( gpTransport $transport ) {
+	public function __construct( gpTransport $transport, $graphname = null ) {
 		$this->transport = $transport;
+		$this->graphname = $graphname;
 	}
 
 	/**
@@ -1075,10 +1068,22 @@ class gpConnection {
 	 * After connecting, this method calls checkProtocolVersion() to make sure
 	 * the peer speaks the correct protocol version. If not, a gpProtocolException
 	 * is raised.
+	 * 
+	 * If a graphname was supplied to the constructor, this function will
+	 * call $this->use_graph($this->graphname) to connect to the given graph.
 	 */
 	public function connect() {
 		$this->transport->connect();
 		$this->checkProtocolVersion();
+
+		if ( $this->graphname ) {
+			try {
+				$this->use_graph($this->graphname);
+			} catch ( gpException $e ) {
+				$this->close();
+				throw $e;
+			}
+		}
 	}
 	
 	/**
@@ -1708,7 +1713,7 @@ class gpConnection {
 	 * @param int $port (default: GP_PORT) the TCP port the GraphServ process is listening on.
 	 */
 	public static function new_client_connection( $graphname, $host = false, $port = false ) {
-		return new gpConnection( new gpClientTransport($graphname, $host, $port) );
+		return new gpConnection( new gpClientTransport($host, $port), $graphname );
 	}
 
 	/**

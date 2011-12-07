@@ -22,8 +22,8 @@ if ( !defined('NS_CATEGORY_TALK') ) define( 'NS_CATEGORY_TALK', 15 );
 class gpMediaWikiGlue extends gpMySQLGlue {
 	var $table_prefix = null;
 	
-	function __construct( $transport ) {
-		parent::__construct($transport);
+	function __construct( $transport, $graphname = null ) {
+		parent::__construct($transport, $graphname);
 
 		//$h = array( $this, 'gp_mediawiki_exec_handler' );
 		//$this->addExecHandler( $h );
@@ -169,7 +169,7 @@ class gpMediaWikiGlue extends gpMySQLGlue {
 	*/
 	 
 	public static function new_client_connection( $graphname, $host = false, $port = false ) {
-		return new gpMediaWikiGlue( new gpClientTransport($graphname, $host, $port) );
+		return new gpMediaWikiGlue( new gpClientTransport($host, $port), $graphname  );
 	}
 
 	public static function new_slave_connection( $command, $cwd = null, $env = null ) {

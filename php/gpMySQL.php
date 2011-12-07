@@ -308,8 +308,8 @@ class gpMySQLGlue extends gpConnection {
 	var $connection = null;
 	var $unbuffered = false;
 	
-	function __construct( $transport ) {
-		parent::__construct($transport);
+	function __construct( $transport, $graphname = null ) {
+		parent::__construct($transport, $graphname);
 
 		$h = array( $this, 'gp_mysql_call_handler' );
 		$this->addCallHandler( $h );
@@ -586,7 +586,7 @@ class gpMySQLGlue extends gpConnection {
 
 	 
 	public static function new_client_connection( $graphname, $host = false, $port = false ) {
-		return new gpMySQLGlue( new gpClientTransport($graphname, $host, $port) );
+		return new gpMySQLGlue( new gpClientTransport($host, $port), $graphname  );
 	}
 
 	public static function new_slave_connection( $command, $cwd = null, $env = null ) {
