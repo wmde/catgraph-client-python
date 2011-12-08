@@ -637,10 +637,13 @@ class PipeTransport(Transport): # abstract
     def __init__(self):
         self.hout = None
         self.hin = None
+        
+        self.out_chunk_size = None
+        
         Transport.__init__(self)
     
     @staticmethod
-    def send_to(hout, s):
+    def send_to(hout, s, chunk_size = None):
         """Utility function for sending data to a file handle.
 
         This is essentially a wrapper around file.write(), which makes sure
@@ -652,13 +655,16 @@ class PipeTransport(Transport): # abstract
         @raise gpProtocolException if writing fails.
     
         """
-        #? length = len(s)
         try:
-            hout.write(s)
-            hout.flush()            # try to write the buffer
-            #os.fsync(hout.fileno()) # ensure that the whole buffer is written
-            # This seems not to work for a socket.makefile().
-            #? return length #? no more necessary!
+            if chunk_size: # write small chunks
+                i = 0
+                while i <= len(s):
+                    hout.write(s[i:i+chunk_size])
+                    hout.flush()            # try to write the buffer
+                    i += chunk_size
+            else: # write all at once
+                hout.write(s)
+                hout.flush()            # try to write the buffer
         except IOError:
             raise gpClientException(
               "failed to send data to peer, broken pipe! "
@@ -675,7 +681,7 @@ class PipeTransport(Transport): # abstract
         method. Uses PipeTransport.send_to() to send the data.
     
         """
-        return PipeTransport.send_to(self.hout, s)
+        return PipeTransport.send_to(self.hout, s, self.out_chunk_size)
     
     def receive(self):
         """Receives a string of data from the peer

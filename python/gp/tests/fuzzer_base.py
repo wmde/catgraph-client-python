@@ -2,11 +2,11 @@ from gp.client import Connection
 from gp.client import gpException
 from test_config import *
 import test_config
-import os
+import os, sys
 import random
 import time
 
-TestGraphName = 'test' + str(os.getpid())
+test_graph_name = 'test' + str(os.getpid())
 
 def fuzz_pick( a ):
     i = random.randint(0, len(a)-1)
@@ -19,41 +19,40 @@ class FuzzerBase (object): # abstract
     def __init__(self):
         self.graph = None
         self.useTempGraph = True
+        
+    def blip( self, s ):
+		sys.stdout.write( s )
+		sys.stdout.flush()
     
     def newConnection(self):
-        global TestGraphServHost, TestGraphServPort #noetig?
         gp = Connection.new_client_connection(None,
-          TestGraphServHost, TestGraphServPort )
+          test_graphserv_host, test_graphserv_port )
         gp.connect()
         return gp
     
     def connect(self):
-        global TestAdmin, TestAdminPassword
-        global TestGraphName
-        global TestGraphServHost, TestGraphServPort
-        
         if not self.graph:
-            self.graph = TestGraphName
+            self.graph = test_graph_name
         
         try:
             self.gp = self.newConnection()
         except gpException as ex:
             print("Unable to connect to "
-              + TestGraphServHost + ":" + str(TestGraphServPort)
+              + test_graphserv_host + ":" + str(test_graphserv_port)
               + ", please make sure the graphserv process is running "
-              + "and check the TestGraphServHost and "
-              + "TestGraphServPort configuration options in "
+              + "and check the test_graphserv_host and "
+              + "test_graphserv_port configuration options in "
               + "test_config.py.")
             print("Original error: " + str(ex))
             quit(11)
         
         try:
             self.gp.authorize( 'password',
-              TestAdmin + ":" + TestAdminPassword)
+              test_admin + ":" + test_admin_password)
         except gpException, ex:
             print("Unable to connect to authorize as "
-              + TestAdmin + ", please check the gpTestAdmin and "
-              + "TestAdminPassword configuration options in "
+              + test_admin + ", please check the test_admin and "
+              + "test_admin_password configuration options in "
               + "test_config.py.")
             print("Original error: " + str(ex))
             quit(12)
@@ -65,13 +64,13 @@ class FuzzerBase (object): # abstract
             self.gp.use_graph( self.graph )
         except gpException, ex:
             print("Unable to use graph self.graph, please check the "
-              + "TestGraphName configuration option in test_config.py "
-              + "as well as the privileges of user " + gpTestAdmin + ".")
+              + "test_graph_name configuration option in test_config.py "
+              + "as well as the privileges of user " + test_admin + ".")
             print("Original error: " + ex.getMessage())
             quit(13)
     
     def disconnect(self):
-        global TestAdmin, TestAdminPassword
+        global test_admin, test_admin_password
 
         if self.useTempGraph and self.graph:
             self.gp.try_drop_graph(self.graph) #? gp OK?
@@ -97,11 +96,11 @@ class FuzzerBase (object): # abstract
             for i in range(100):
                 ok = self.doFuzz()
                 if ok:
-                    print "+",
+                    self.blip("+")
                 else:
-                    print "-",
+                    self.blip("-")
             
-            print "\n";
+            self.blip("\n");
             # time.sleep(1) #? Muss wieder rein!
         
         self.disconnect()

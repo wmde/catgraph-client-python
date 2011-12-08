@@ -3,8 +3,6 @@ from gp.client import *
 from test_config import *
 import sys
 
-global TestGraphServHost
-
 fuzz_commands = ( "list-roots", "list-successors", "add-arcs", "stats",
   "22", "-11111", "xyz", "0", "!", "&", "%", "#", "",)
 
@@ -43,7 +41,8 @@ class CrudFuzzer (FuzzerBase):
             
         return False
 
+if __name__ == '__main__':
 
-fuzzer = CrudFuzzer()
+	fuzzer = CrudFuzzer()
 
-fuzzer.run(sys.argv)
+	fuzzer.run(sys.argv)

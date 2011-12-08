@@ -1,5 +1,6 @@
-from fuzzer_base import FuzzerBase
+from fuzzer_base import FuzzerBase, test_graph_name
 from gp.client import Connection
+from test_config import *
 import random
 import sys
 
@@ -11,21 +12,19 @@ class ArcFuzzer(FuzzerBase):
         FuzzerBase.__init__(self)
     
     def prepare(self):
-        global gpTestGraphName
-        
         # in case we use a persistent graph, fund an unused offset
         Range = range(self.offset,10)
         for i in Range:
             if not self.gp.capture_list_successors(i):
-                self.gp.add_arcs(((i, i+1)))
-                print "fuzz offset: i (" + TestGraphName + ")"
+                self.gp.add_arcs(((i, i+1),))
+                print "fuzz offset: %d (%s)" % (i, test_graph_name)
                 return
             
             self.offset = i + 1
             #? self.offset verstehen!
         
         exit("no free offset left (or "
-          + TestGraphName + "needs purging)")
+          + test_graph_name + "needs purging)")
          
     
     def random_node(self):
@@ -58,11 +57,11 @@ class ArcFuzzer(FuzzerBase):
         self.gp.replace_successors(self.random_node(), self.random_set())
         self.gp.replace_predecessors(self.random_node(), self.random_set())
         
-        return False
+        return True
          
     
-     
+if __name__ == '__main__':
 
-fuzzer = ArcFuzzer()
+    fuzzer = ArcFuzzer()
 
-fuzzer.run(sys.argv)
+    fuzzer.run(sys.argv)
