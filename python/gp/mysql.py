@@ -356,9 +356,6 @@ class MySQLGlue (Connection):
                 # default: buffered tuples
                 cursor = MySQLdb.cursors.Cursor(self.connection) 
         
-        cursor = self.connection.cursor()
-        #TODO: apply buffered/unbuffered
-        
         with warnings.catch_warnings():
             #ignore MySQL warnings. use cursor.nfo() to get them.
             warnings.simplefilter("ignore")
