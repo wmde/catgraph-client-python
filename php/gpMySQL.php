@@ -580,7 +580,10 @@ class gpMySQLGlue extends gpConnection {
 	}
 	
 	public function close() {
-		$this->mysql_close();
+		if ( $this->connection ) {
+			$this->mysql_close();
+		}
+		
 		parent::close();
 	}
 
