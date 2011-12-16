@@ -471,6 +471,24 @@ class ServerTest (ClientTestBase, unittest.TestCase):
           "should be able to shut down graph with admin privileges" )
 
 
+    def test_traverseSuccessorsWithout(self):
+        self.gp.add_arcs( [
+            ( 1, 11 ),
+            ( 1, 12 ),
+            ( 11, 111 ),
+            ( 11, 112 ),
+            ( 111, 1111 ),
+            ( 111, 1112 ),
+            ( 112, 1121 ),
+        ] )
+        
+        self.assertStatsValue( 'ArcCount', 7 )
+        
+        #--------------------------------------------
+        succ = self.gp.capture_traverse_successors_without( 11, 5, 111, 5 )
+
+        self.assertEquals( [ (11,), (112,), (1121,), ], succ )
+    
 
 
 
