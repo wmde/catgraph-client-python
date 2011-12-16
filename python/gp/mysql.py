@@ -1,4 +1,5 @@
 from client import *
+from client import __function__
 
 import types
 import re
@@ -628,10 +629,13 @@ class MySQLGlue (Connection):
 	
 	
 	def close(self):
-		try:
-			self.mysql_close()
-		except:
-			pass #XXX: do we really not care? could there have been a commit pending?
+		if self.connection:
+			try:
+				self._trace(__function__(), "closing mysql connection")
+				self.mysql_close()
+			except Exception as e:
+				self._trace(__function__(), "failed to close mysql connection: %s" % e)
+				#XXX: do we really not care? can we go on? could there have been a commit pending?
 		
 		return super(MySQLGlue, self).close()
 

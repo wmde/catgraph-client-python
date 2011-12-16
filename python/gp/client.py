@@ -786,7 +786,19 @@ class ClientTransport(PipeTransport):
         if not self.socket:
             return False
         
-        self.socket.close()
+        self.trace(__function__(), "closing socket")
+                
+        #manual sais: use shutdown() before close() to close socket in a "timely fashion".
+        try:
+            self.socket.shutdown(socket.SHUT_RDWR) 
+        except socket.error as e:
+			self.trace(__function__(), "socket.shutdown() failed: %s" % e)
+            
+        try:
+            self.socket.close()
+        except socket.error as e:
+			self.trace(__function__(), "socket.close() failed: %s" % e)
+        
         self.closed = True
      
 
