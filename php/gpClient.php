@@ -728,7 +728,7 @@ class gpClientTransport extends gpPipeTransport {
 	 * @param string $host (default: 'localhost') the host the GraphServ process is located on.
 	 * @param int $port (default: GP_PORT) the TCP port the GraphServ process is listening on.
 	 */
-	public function __construct( $graphname, $host = false, $port = false ) {
+	public function __construct( $host = false, $port = false ) {
 		if ( !$host ) $host = 'localhost';
 		if ( !$port ) $port = GP_PORT;
 
