@@ -722,6 +722,24 @@ class PipeTransport(Transport): # abstract
         """ 
         return PipeSink(self.hout)
 
+    def close(self): #TODO: port to PHP!
+        self.trace(__function__(), "closing pipes")
+
+        if self.hin:
+            try:
+                self.hin.close()
+            except:
+                pass
+    
+        if self.hout:
+            self.hout.flush()
+            
+            try:
+                self.hout.close()
+            except:
+                pass
+    
+        Transport.close(self)
 
 class ClientTransport(PipeTransport):
     """Communicate with a remote instance of GraphServ over TCP.
@@ -769,8 +787,8 @@ class ClientTransport(PipeTransport):
             raise gpProtocolException(
               "failed to connect to %s:%s: %s %s" % (self.host, self.port, value, message) )
         
-        self.hin = self.socket.makefile()
-        self.hout = self.socket.makefile()
+        self.hin = self.socket.makefile("r")
+        self.hout = self.socket.makefile("w")
         
         return True
          
@@ -783,6 +801,9 @@ class ClientTransport(PipeTransport):
         communication error ocurred.
     
         """
+
+        PipeTransport.close(self)
+
         if not self.socket:
             return False
         
@@ -792,12 +813,12 @@ class ClientTransport(PipeTransport):
         try:
             self.socket.shutdown(socket.SHUT_RDWR) 
         except socket.error as e:
-			self.trace(__function__(), "socket.shutdown() failed: %s" % e)
+            self.trace(__function__(), "socket.shutdown() failed: %s" % e)
             
         try:
             self.socket.close()
         except socket.error as e:
-			self.trace(__function__(), "socket.close() failed: %s" % e)
+            self.trace(__function__(), "socket.close() failed: %s" % e)
         
         self.closed = True
      
@@ -936,6 +957,8 @@ class SlaveTransport(PipeTransport):
     
     def close(self):
         """Close transport by terminating slave process using Popen.terminate()."""
+        
+        #PipeTransport.close(self) #XXX: call parent to close pipes?!
         
         if not self.process:
             return False
