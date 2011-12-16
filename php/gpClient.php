@@ -60,7 +60,7 @@ define( 'GP_PORT', 6666 );
  * Expected GraphServ protocol version. If GraphServ (resp GraphCore)
  * reports a different protocol version, the conenction is aborted.
  */
-define( 'GP_CLIENT_PROTOCOL_VERSION', 2 );
+define( 'GP_CLIENT_PROTOCOL_VERSION', 3 );
 
 /**
  * Base class for gpClient exceptions.

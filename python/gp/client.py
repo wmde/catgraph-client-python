@@ -58,7 +58,7 @@ LINEBREAK = "\r\n"
 PORT = 6666
 """Default GraphServ port"""
 
-CLIENT_PROTOCOL_VERSION = 2
+CLIENT_PROTOCOL_VERSION = 3
 """Expected GraphServ protocol version. If GraphServ (resp. GraphCore)
    reports a different protocol version, the conenction will be aborted."""
 
