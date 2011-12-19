@@ -303,7 +303,10 @@ class MySQLGlue (Connection):
 		
 		self.connection = None
 		self.unbuffered = False
-
+        
+		self.temp_table_prefix = "gp_temp_"
+		self.temp_table_db = None
+		
 		self.addCallHandler( self.gp_mysql_call_handler )
 		
 		self.max_allowed_packet = None
@@ -517,7 +520,8 @@ class MySQLGlue (Connection):
 		table = spec.get_name()
 		
 		if ( not table  or  table == '?' ):
-			table = "gp_temp_%s" % self.next_id()
+			table = "%s%d" % (self.temp_table_prefix, self.next_id())
+			if ( self.temp_table_db ) table = "%s.%s" % (self.temp_table_db, table);
 		
 		sql = "CREATE TEMPORARY TABLE %s" % table
 		sql += "("

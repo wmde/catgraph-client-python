@@ -311,6 +311,9 @@ class gpMySQLGlue extends gpConnection {
 	function __construct( $transport, $graphname = null ) {
 		parent::__construct($transport, $graphname);
 
+		$this->temp_table_prefix = "gp_temp_";
+		$this->temp_table_db = null;
+		
 		$h = array( $this, 'gp_mysql_call_handler' );
 		$this->addCallHandler( $h );
 	}
@@ -469,7 +472,8 @@ class gpMySQLGlue extends gpConnection {
 		$table = $spec->get_name();
 		
 		if ( !$table || $table === '?' ) { 
-			$table = "gp_temp_" . $this->next_id();
+			$table = $this->temp_table_prefix . $this->next_id(); 
+			if ( $this->temp_table_db ) $table = $this->temp_table_db . '.' . $table;
 		}
 		
 		$sql = "CREATE TEMPORARY TABLE " . $table; 
