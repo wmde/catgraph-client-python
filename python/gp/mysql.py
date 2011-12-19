@@ -521,7 +521,9 @@ class MySQLGlue (Connection):
 		
 		if ( not table  or  table == '?' ):
 			table = "%s%d" % (self.temp_table_prefix, self.next_id())
-			if ( self.temp_table_db ) table = "%s.%s" % (self.temp_table_db, table);
+			
+			if self.temp_table_db: 
+				table = "%s.%s" % (self.temp_table_db, table);
 		
 		sql = "CREATE TEMPORARY TABLE %s" % table
 		sql += "("
