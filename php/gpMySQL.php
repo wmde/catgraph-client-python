@@ -436,7 +436,19 @@ class gpMySQLGlue extends gpConnection {
 		return "'" . mysql_real_escape_string( $s ) . "'";
 	}
 	
+	public function as_literal( $v ) { #TODO: port to python
+		if ( is_null($v) ) return "NULL";
+		else if ( is_int($v) ) return $v;
+		else if ( is_float($v) ) return $v;
+		else if ( is_string($v) ) return $this->quote_string($v); //TODO: charset...
+		else throw new gpUsageException("bad value type: " . gettype($v));
+	}
+		
 	public function as_list( $values ) {
+		if ( !$values ) {
+			throw new gpUsageException("empty value list!"); #TODO: port to python
+		}
+		
 		$sql = "(";
 
 		$first = true;
@@ -444,11 +456,7 @@ class gpMySQLGlue extends gpConnection {
 			if ( !$first ) $sql .= ",";
 			else $first = false;
 			
-			if ( is_null($v) ) $sql.= "NULL";
-			else if ( is_int($v) ) $sql.= $v;
-			else if ( is_float($v) ) $sql.= $v;
-			else if ( is_string($v) ) $sql.= $this->quote_string($v); //TODO: charset...
-			else throw new gpUsageException("bad value type: " . gettype($v));
+			$sql.= $this->as_literal($v);
 		}
 		
 		$sql .= ")";

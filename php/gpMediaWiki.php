@@ -175,6 +175,31 @@ class gpMediaWikiGlue extends gpMySQLGlue {
 	public static function new_slave_connection( $command, $cwd = null, $env = null ) {
 		return new gpMediaWikiGlue( new gpSlaveTransport($command, $cwd, $env) );
 	}
+
+	public function condition_sql( $where, $assume_literals = true ) {
+		if ( is_array($where) ) {
+			if ( isset( $where[0] ) ) { #indexed array
+				$where = '(' . implode(') AND (', $where) . ')';
+			} else { #assoc array
+				$opt = $where;
+				$where = ' ';
+				
+				foreach ( $opt as $k => $v ) {
+					$where .= '(';
+					$where .= $k;
+					
+					if ( is_array($v) ) $where .=  ( $inverse ? " not in " : " in " ) . $this->glue->as_list( $v ); 
+					elseif ( is_string($v) && !$assume_literals ) $where .= ( $inverse ? " != " : " = " ) . $v;  # field reference or quoted literal
+					else $where .= ( $inverse ? " != " : " = " ) . $this->glue->as_literal( $v ); 
+					
+					$where .= ')';
+				}
+			}
+		}
+		
+		return $where;
+	}
+	
 }
 
 
@@ -187,7 +212,7 @@ class gpPageSet {
 	
 	var $big = true;
 	
-	public function __construct( $glue, $table = "?", $id_field = "page_id", $namespace_field = "page_namespace", $title_field = "page_title" ) {
+	public function __construct( $glue, $table = "?", $id_field = "page_id", $namespace_field = "page_namespace", $title_field = "page_title" ) { #TODO: port new field names to python
 		$this->glue = $glue;
 		$this->table = $table;
 		
@@ -254,21 +279,9 @@ class gpPageSet {
 		return $this->query( $sql );
 	} 
 	
-	public function delete_where( $where ) {
-		$sql= "DELETE FROM " . $this->table ." ";
-		$sql .= $where;
-		
-		return $this->query( $sql );
-	} 
-	
-	public function delete_using( $using, $tableAlias = "T" ) {
-		$sql= "DELETE FROM $tableAlias ";
-		$sql .= "USING " . $this->table ." AS $tableAlias ";
-		$sql .= $using;
-		
-		return $this->query( $sql );
-	} 
-	
+	#TODO: kill delete_where() from python, superceded by strip/retain
+	#TODO: kill delete_using() from python, superceded by strip/retain
+
 	public function resolve_ids( ) {
 		//NOTE: MySQL can't perform self-joins on temp tables. so we need to copy the ids to another temp table first.
 		$t = new gpMySQLTable("?", "page_id");
@@ -434,20 +447,99 @@ class gpPageSet {
 	}
 
 	public function strip_namespace( $ns, $inverse = false ) {
-		$sql = "DELETE FROM " . $this->table;
-		$sql .= " WHERE " . $this->namespace_field;
-		
-		if ( is_array($ns) ) $sql .=  ( $inverse ? " not in " : " in " ) . $this->glue->as_list( $ns ); 
-		else $sql .= ( $inverse ? " != " : " = " ) . (int)$ns; 
-			
-		$this->query($sql);
-		return true;
+		$where = $this->namespace_field . ' = ' . (int)$ns;
+		return $this->strip( $where, null, $inverse );
 	}
 
 	public function retain_namespace( $ns ) {
 		return $this->strip_namespace( $ns, true );
 	}
 	
+	public function strip_transcluding( $title, $ns, $inverse = false ) { #TODO: port to python!
+		$where = array(
+			'tl_title' => $title,
+			'tl_namespace' => $ns,
+		);
+		
+		$join = array(
+			'templatelinks' => ' tl_from = ' . $this->id_field
+		);
+		
+		return $this->strip( $where, $join, $inverse );
+	}
+
+	public function retain_transcluding( $title, $ns ) { #TODO: port to python!
+		return $this->strip_transcluding( $title, $ns, true );
+	}
+
+	public function strip_modified_since( $timestamp, $inverse = false ) { #TODO: port to python!
+		$where = 'rc_timestamp >= ' . $this->glue->quote_string($timestamp);
+		
+		$join = array(
+			'recentchanges' => ' rc_page = ' . $this->id_field
+		);
+		
+		return $this->strip( $where, $join, $inverse );
+	}
+
+	public function retian_modified_since( $timestamp ) { #TODO: port to python!
+		return $this->strip_modified_since( $title, $ns, true );
+	}
+
+	public function strip_larger( $size, $inverse = false ) { #TODO: port to python!
+		$where = 'rev_length >= ' . (int)$size;
+		
+		$join = array(
+			'page' => 'page_id = ' . $this->id_field,
+			'revision' => 'rev_id = page_latest' 
+		);
+		
+		return $this->strip( $where, $join, $inverse );
+	}
+
+	public function retian_larger( $size ) { #TODO: port to python!
+		return $this->strip_larger( $title, $ns, true );
+	}
+
+	public function strip( $where, $join = null, $inverse = false ) { #TODO: port to python!
+		if ( $where ) $where = $this->glue->condition_sql($where);
+
+		if ( is_array($join) ) {
+			if ( isset( $join[0] ) ) { #indexed array
+				$join = ' JOIN ' . implode(' JOIN ', $join) . ' ';
+			} else { #assoc array
+				$jj = $join;
+				$join = ' ';
+				
+				foreach ( $jj as $t => $on ) {
+					$join .= ' JOIN ';
+					$join .= $this->glue->wiki_table( $t );
+					$join .= ' ON ';
+					$join .= $this->glue->condition_sql($on, false)
+				}
+			}
+		}
+		
+		if ( $join ) {
+			$sql = 'DELETE FROM TTT ';
+			$sql .= ' USING ' . $this->table . ' AS TTT ';
+			$sql .= $join;
+		} else {
+			$sql = 'DELETE FROM ' . $this->table;
+		}
+		
+		if ( $where ) {
+			$sql .= ' WHERE ' . $where;
+		}
+			
+		$this->query($sql);
+		return true;
+	}
+
+	public function retain( $where, $join = null ) { #TODO: port to python!
+		return $this->strip( $where, $join, true );
+	}
+
 	public function add_page( $id, $ns, $title ) {
 		if ( !$id ) $id = $this->glue->get_page_id( NS_CATEGORY, $cat );
 		
