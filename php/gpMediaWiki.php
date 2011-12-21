@@ -72,11 +72,16 @@ class gpMediaWikiGlue extends gpMySQLGlue {
 	}
 	
 	public function get_page_id( $ns, $title ) {
+		$title = $this->get_db_key($title);
+		$ns = (int)$ns;
+		
 		$sql = "select page_id from " . $this->wiki_table( "page" );
 		$sql .= " where page_namespace = " . (int)$ns;
-		$sql .= " and page_title = " . $this->quote_string( $this->get_db_key($title) );
+		$sql .= " and page_title = " . $this->quote_string( $title );
 		
 		$id = $this->mysql_query_value( $sql );
+		
+		if ( !$id ) throw new gpClientException("Page not found in namespace $ns: $title");
 		return $id;
 	}
 	
@@ -224,7 +229,7 @@ class gpPageSet {
 	
 	var $big = true;
 	
-	public function __construct( $glue, $table = "?", $id_field = "page_id", $namespace_field = "page_namespace", $title_field = "page_title" ) { #TODO: port new field names to python
+	public function __construct( $glue, $table = "?", $id_field = "pageset_id", $namespace_field = "pageset_namespace", $title_field = "pageset_title" ) { #TODO: port new field names to python
 		$this->glue = $glue;
 		$this->table = $table;
 		
@@ -291,7 +296,7 @@ class gpPageSet {
 		$sql = $tmp->get_insert(true);
 		$sql .= "SELECT " . $this->id_field;
 		$sql .= " FROM " .  $this->table;
-		$sql .= " WHERE page_title IS NULL";
+		$sql .= " WHERE " . $this->title_field . " IS NULL";
 		
 		$this->query( $sql );  //copy page ids with no page title into temp table
 		
@@ -504,33 +509,86 @@ class gpPageSet {
 		return $this->strip( $where, $join );
 	}
 
-	public function strip_modified_since( $timestamp, $inverse = false ) { #TODO: port to python!
+	public function strip_modified_since( $timestamp ) { #TODO: port to python!
 		$where = 'rc_timestamp >= ' . $this->glue->quote_string($timestamp);
 		
 		$join = array(
-			'recentchanges' => ' rc_page = ' . $this->id_field
+			'recentchanges' => array(
+				'rc_namespace' => $this->namespace_field,
+				'rc_title' => $this->title_field,
+			),
 		);
 		
-		return $this->strip( $where, $join, $inverse );
+		return $this->strip( $where, $join );
 	}
 
-	public function retian_modified_since( $timestamp ) { #TODO: port to python!
-		return $this->strip_modified_since( $title, $ns, true );
+	public function retain_modified_since( $timestamp ) { #TODO: port to python!
+		#TODO: normalize $timestamp
+	
+		$join = 'LEFT JOIN ' . $this->glue->wiki_table('recentchanges');
+		$join .= ' ON rc_namespace = ' . $this->namespace_field #literals not assumed: used as a field name, not a string value
+			. ' AND rc_title = ' . $this->title_field #literals not assumed: used as a field name, not a string value
+			. ' AND rc_timestamp >= ' . $this->glue->quote_string($timestamp);
+			
+		$where = " rc_id is null ";
+		
+		return $this->strip( $where, $join );
 	}
 
-	public function strip_larger( $size, $inverse = false ) { #TODO: port to python!
-		$where = 'rev_length >= ' . (int)$size;
+	public function strip_by_size( $size, $op ) { #TODO: port to python!
+		$where = 'rev_len ' . $op . ' ' . (int)$size;
 		
 		$join = array(
 			'page' => 'page_id = ' . $this->id_field,
 			'revision' => 'rev_id = page_latest' 
 		);
 		
-		return $this->strip( $where, $join, $inverse );
+		return $this->strip( $where, $join);
 	}
 
-	public function retian_larger( $size ) { #TODO: port to python!
-		return $this->strip_larger( $title, $ns, true );
+	public function strip_larger( $size ) { #TODO: port to python!
+		return $this->strip_by_size( $size, '>' );
+	}
+
+	public function strip_smaller( $size ) { #TODO: port to python!
+		return $this->strip_by_size( $size, '<' );
+	}
+
+	public function retain_larger( $size ) { #TODO: port to python!
+		return $this->strip_by_size( $size, '<=' );
+	}
+
+	public function retain_smaller( $size ) { #TODO: port to python!
+		return $this->strip_by_size( $size, '>=' );
+	}
+
+	public function strip_by_creation( $timestamp, $op ) { #TODO: port to python!
+		$where = 'rev_timestamp ' . $op . ' ' . (int)$timestamp;
+		
+		$join = array(
+			'revision' => array('rev_page' => $this->id_field,
+								'rev_deleted' => 0,   #not deleted
+								'rev_parent_id' => 0, #first rev of page #XXX: is this reliable?
+								),
+		);
+		
+		return $this->strip( $where, $join);
+	}
+
+	public function strip_older( $timestamp ) { #TODO: port to python!
+		return $this->strip_by_creation( $timestamp, '<' );
+	}
+
+	public function strip_newer( $timestamp ) { #TODO: port to python!
+		return $this->strip_by_creation( $timestamp, '>' );
+	}
+
+	public function retain_older( $timestamp ) { #TODO: port to python!
+		return $this->strip_by_creation( $timestamp, '>=' );
+	}
+
+	public function retain_newer( $timestamp ) { #TODO: port to python!
+		return $this->strip_by_creation( $timestamp, '<=' );
 	}
 
 	public function strip( $where, $join = null, $inverse = false ) { #TODO: port to python!
@@ -564,6 +622,7 @@ class gpPageSet {
 			$sql .= ' WHERE ' . $where;
 		}
 			
+		#print "*** $sql ***";
 		$this->query($sql);
 		return true;
 	}
@@ -606,9 +665,9 @@ class gpPageSet {
 		$tmp = $this->glue->make_temp_table( $t );
 		
 		$sql = $tmp->get_insert(true);
-		$sql .= " select page_title ";
+		$sql .= " select " . $this->title_field;
 		$sql .= " from " . $this->table . " as T ";
-		$sql .= " where page_namespace =  ".NS_CATEGORY;
+		$sql .= " where " . $this->namespace_field . " =  ".NS_CATEGORY;
 	
 		$this->query( $sql );
 		#$this->glue->dump_query("select * from ".$tmp->get_name());
