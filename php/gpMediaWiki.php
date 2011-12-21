@@ -494,8 +494,8 @@ class gpPageSet {
 		
 		$join = 'LEFT JOIN ' . $this->glue->wiki_table('templatelinks');
 		$join .= ' ON ' . $this->glue->condition_sql( array(
-				'tl_from' => $this->id_field,
-				'tl_title' => $this->glue->quote_string($title),
+				'tl_from' => $this->id_field, #literals not assumed: used as a field name, not a string value
+				'tl_title' => ( is_array($title) ? $title : $this->glue->quote_string($title) ), #need to quote strings, because literals are not assumed
 				'tl_namespace' => (int)$ns,
 			), false );
 			
