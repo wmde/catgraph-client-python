@@ -394,10 +394,12 @@ class gpPageSet {
 	public function subtract_table( $table, $id_field = null ) {
 		if ( !$id_field ) $id_field = $table->get_field1();
 		
-		$sql = "DELETE FROM T ";
-		$sql .= " USING " . $this->table . " AS T ";
-		$sql .= " JOIN " . $table->get_name() . " AS R ";
-		$sql .= " ON T." . $this->id_field . " = R." . $id_field;
+		$t = $this->table;
+		$r = $table->get_name();
+		$sql = "DELETE FROM $t ";
+		$sql .= " USING $t ";
+		$sql .= " JOIN $r ";
+		$sql .= " ON $t." . $this->id_field . " = $r." . $id_field;
 		
 		$this->query($sql);
 		return true;
@@ -406,11 +408,20 @@ class gpPageSet {
 	public function retain_table( $table, $id_field = null ) {
 		if ( !$id_field ) $id_field = $table->get_field1();
 		
-		$sql = "DELETE FROM T ";
-		$sql .= " USING " . $this->table . " AS T ";
-		$sql .= " LEFT JOIN " . $table->get_name() . " AS R ";
-		$sql .= " ON T." . $this->id_field . " = R." . $id_field;
-		$sql .= " WHERE R.$id_field IS NULL";
+		#$sql = "DELETE FROM T ";
+		#$sql .= " USING " . $this->table . " AS T ";
+		#$sql .= " LEFT JOIN " . $table->get_name() . " AS R ";
+		#$sql .= " ON T." . $this->id_field . " = R." . $id_field;
+		#$sql .= " WHERE R.$id_field IS NULL";
+		
+		#NOTE: for some silly reason, mysql doesn't like aliases for temp tables in other databases.
+		$t = $this->table;
+		$r = $table->get_name();
+		$sql = "DELETE FROM $t ";
+		$sql .= " USING $t ";
+		$sql .= " LEFT JOIN $r ";
+		$sql .= " ON $t." . $this->id_field . " = $r." . $id_field;
+		$sql .= " WHERE $r.$id_field IS NULL";
 		
 		$this->query($sql);
 		return true;
@@ -508,8 +519,8 @@ class gpPageSet {
 		}
 		
 		if ( $join ) {
-			$sql = 'DELETE FROM T ';
-			$sql .= ' USING ' . $this->table . ' AS T ';
+			$sql = 'DELETE FROM ' . $this->table;
+			$sql .= ' USING ' . $this->table . ' ';
 			$sql .= $join;
 		} else {
 			$sql = 'DELETE FROM ' . $this->table;
