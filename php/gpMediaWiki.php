@@ -515,7 +515,7 @@ class gpPageSet {
 					$join .= ' JOIN ';
 					$join .= $this->glue->wiki_table( $t );
 					$join .= ' ON ';
-					$join .= $this->glue->condition_sql($on, false)
+					$join .= $this->glue->condition_sql($on, false);
 				}
 			}
 		}
