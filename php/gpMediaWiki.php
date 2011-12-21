@@ -443,6 +443,11 @@ class gpPageSet {
 		$this->query($sql);
 		return true;
 	}
+	
+	public function size() { #TODO: port to python
+		$sql = "SELECT count(*) FROM " . $this->table;
+		return $this->glue->mysql_query_value($sql);
+	}
 
 	public function strip_namespace( $ns, $inverse = false ) {
 		$where = array( $this->namespace_field => $ns );
