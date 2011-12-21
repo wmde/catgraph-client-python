@@ -50,6 +50,16 @@ class gpMediaWikiGlue extends gpMySQLGlue {
 	*/
 	
 	public function get_db_key( $name ) { 
+		if ( is_array($name) ) { #XXX: hack to handle multiple names
+			$a = array();
+			
+			foreach( $name as $n ) {
+				$a[] = $this->get_db_key($n);
+			}
+			
+			return $a;
+		}
+		
 		//TODO: use native MediaWiki method if available
 		$name = trim($name);
 		$name = str_replace(' ', '_', $name);
@@ -182,9 +192,11 @@ class gpMediaWikiGlue extends gpMySQLGlue {
 				$where = '(' . implode(') AND (', $where) . ')';
 			} else { #assoc array
 				$opt = $where;
-				$where = ' ';
+				$where = '';
 				
 				foreach ( $opt as $k => $v ) {
+					if ( $where ) $where .= ' AND ';
+					
 					$where .= '(';
 					$where .= $k;
 					
@@ -428,6 +440,8 @@ class gpPageSet {
 	}
 
 	public function remove_page( $ns, $title ) {
+		$title = $this->glue->get_db_key($title);
+		
 		$sql = "DELETE FROM " . $this->table;
 		$sql .= " WHERE " . $this->namespace_field . " = " . (int)$ns;
 		$sql .= " AND " . $this->title_field . " = " . $this->glue->quote_string($title);
@@ -458,7 +472,10 @@ class gpPageSet {
 		return $this->strip_namespace( $ns, true );
 	}
 	
-	public function strip_transcluding( $title, $ns, $inverse = false ) { #TODO: port to python!
+	public function strip_transcluding( $title, $ns = null ) { #TODO: port to python!
+		if ( $ns === null ) $ns = NS_TEMPLATE;
+		$title = $this->glue->get_db_key($title);
+		
 		$where = array(
 			'tl_title' => $title,
 			'tl_namespace' => $ns,
@@ -468,11 +485,23 @@ class gpPageSet {
 			'templatelinks' => ' tl_from = ' . $this->id_field
 		);
 		
-		return $this->strip( $where, $join, $inverse );
+		return $this->strip( $where, $join );
 	}
 
-	public function retain_transcluding( $title, $ns ) { #TODO: port to python!
-		return $this->strip_transcluding( $title, $ns, true );
+	public function retain_transcluding( $title, $ns = null ) { #TODO: port to python!
+		if ( $ns === null ) $ns = NS_TEMPLATE;
+		$title = $this->glue->get_db_key($title);
+		
+		$join = 'LEFT JOIN ' . $this->glue->wiki_table('templatelinks');
+		$join .= ' ON ' . $this->glue->condition_sql( array(
+				'tl_from' => $this->id_field,
+				'tl_title' => $this->glue->quote_string($title),
+				'tl_namespace' => (int)$ns,
+			), false );
+			
+		$where = " tl_from is null ";
+		
+		return $this->strip( $where, $join );
 	}
 
 	public function strip_modified_since( $timestamp, $inverse = false ) { #TODO: port to python!
