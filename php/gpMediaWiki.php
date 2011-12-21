@@ -306,12 +306,12 @@ class gpPageSet {
 	}
 
 	public function make_sink() {
-		$sink = $this->glue->make_sink( $this->table_obj );
+		$sink = $this->glue->make_sink( $this->table_obj, true );
 		return $sink;
 	}
 
 	public function make_id_sink() {
-		$sink = $this->glue->make_sink( $this->table_id_obj );
+		$sink = $this->glue->make_sink( $this->table_id_obj, true );
 		return $sink;
 	}
 

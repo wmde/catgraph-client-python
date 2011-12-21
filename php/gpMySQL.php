@@ -176,9 +176,11 @@ abstract class gpMySQLInserter {
 	var $table;
 	var $fields;
 
-	function __construct ( gpMySQLGlue $glue, gpMySQLTable $table ) {
+	function __construct ( gpMySQLGlue $glue, gpMySQLTable $table, $ignore_dupes = false ) {
 		$this->glue = $glue;
 		$this->table = $table;
+		
+		$this->ignore_dupes = $ignore_dupes; #TODO: port $ignore_dupes to python!
 	}
 	
 	public abstract function insert( $values );
@@ -199,7 +201,7 @@ class gpMySQLSimpleInserter extends gpMySQLInserter {
 	}
 	
 	protected function insert_command( ) {
-		return $this->table->get_insert();
+		return $this->table->get_insert( $this->ignore_dupes ); #TODO: port use of $ignore_dupes to python!
 	}
 	
 	public function insert( $values ) {
@@ -214,8 +216,8 @@ class gpMySQLSimpleInserter extends gpMySQLInserter {
 
 class gpMySQLBufferedInserter extends gpMySQLSimpleInserter {
 
-	function __construct ( gpMySQLGlue $glue, gpMySQLTable $table ) {
-		parent::__construct( $glue, $table );
+	function __construct ( gpMySQLGlue $glue, gpMySQLTable $table, $ignore_dupes = false ) {
+		parent::__construct( $glue, $table, $ignore_dupes );
 		$this->buffer = "";
 	}
 
@@ -537,21 +539,21 @@ class gpMySQLGlue extends gpConnection {
 		return $c;
 	}
 	
-	protected function new_inserter( gpMySQLTable $table ) {
-		return new gpMySQLBufferedInserter( $this, $table );
+	protected function new_inserter( gpMySQLTable $table, $ignore_dupes = false ) {
+		return new gpMySQLBufferedInserter( $this, $table, $ignore_dupes );
 	}
 	
-	public function make_temp_sink( gpMySQLTable $table ) {
+	public function make_temp_sink( gpMySQLTable $table, $ignore_dupes = false ) {
 		$table = $this->make_temp_table($table);
 		
-		$ins = $this->new_inserter($table);
+		$ins = $this->new_inserter($table, $ignore_dupes);
 		$sink = new gpMySQLTempSink( $ins, $this, $table );
 		
 		return $sink;
 	}
 
-	public function make_sink( gpMySQLTable $table ) {
-		$inserter = $this->new_inserter($table);
+	public function make_sink( gpMySQLTable $table, $ignore_dupes = false ) { #TODO: port $ignore_dupes to python
+		$inserter = $this->new_inserter($table, $ignore_dupes);
 		$sink = new gpMySQLSink( $inserter );
 		
 		return $sink;
