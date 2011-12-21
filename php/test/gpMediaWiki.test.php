@@ -378,7 +378,7 @@ class gpMediaWikiTest extends gpSlaveTestBase {
         $cheese->dispose();
 	}
 
-    public function testDeleteWhere() {
+    public function testStrip() {
         $this->makeWikiStructure();
 		$this->gp->add_arcs_from_category_structure();
 
@@ -388,7 +388,7 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 		$set->add_pages_in("topics", null, 5);
 		
 		//-----------------------------------------------------------
-		$set->delete_where( "where page_namespace = " . NS_CATEGORY );
+		$set->strip( "page_namespace = " . NS_CATEGORY );
 		
 		$a = $set->capture();
 		$expected = array(array(1111, NS_MAIN, "Lager"), 
@@ -397,35 +397,12 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 		
         $this->assertEquals($expected, $a );
         
+        #TODO: test joins
+        #TODO: test $where and $join as array, both indexed and assoc
  		//-----------------------------------------------------------
        $set->dispose();
 	}
 
-    public function testDeleteUsing() {
-        $this->makeWikiStructure();
-		$this->gp->add_arcs_from_category_structure();
-
-		$set = new gpPageSet($this->gp);
-		$set->create_table();
-		
-		$set->add_pages_in("topics", null, 5);
-		
-		//-----------------------------------------------------------
-		$sql = " JOIN " . $this->gp->wiki_table("templatelinks") . " as X ";
-		$sql .= " ON T.page_id = X.tl_from ";
-		$sql .= " WHERE X.tl_namespace = " . NS_TEMPLATE;
-		$sql .= " AND X.tl_title = " . $this->gp->quote_string("Yuck");
-		
-		$set->delete_using( $sql );
-		
-		$a = $set->capture(NS_MAIN);
-		$expected = array(array(1112, NS_MAIN, "Pils"));
-		
-        $this->assertEquals($expected, $a );
-        
-		//-----------------------------------------------------------
-        $set->dispose();
-	}
 
     public function testStripNamespace() {
         $this->makeWikiStructure();

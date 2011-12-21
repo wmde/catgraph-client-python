@@ -176,7 +176,7 @@ class gpMediaWikiGlue extends gpMySQLGlue {
 		return new gpMediaWikiGlue( new gpSlaveTransport($command, $cwd, $env) );
 	}
 
-	public function condition_sql( $where, $assume_literals = true ) {
+	public function condition_sql( $where, $assume_literals = true, $inverse = false ) {
 		if ( is_array($where) ) {
 			if ( isset( $where[0] ) ) { #indexed array
 				$where = '(' . implode(') AND (', $where) . ')';
@@ -188,9 +188,9 @@ class gpMediaWikiGlue extends gpMySQLGlue {
 					$where .= '(';
 					$where .= $k;
 					
-					if ( is_array($v) ) $where .=  ( $inverse ? " not in " : " in " ) . $this->glue->as_list( $v ); 
+					if ( is_array($v) ) $where .=  ( $inverse ? " not in " : " in " ) . $this->as_list( $v ); 
 					elseif ( is_string($v) && !$assume_literals ) $where .= ( $inverse ? " != " : " = " ) . $v;  # field reference or quoted literal
-					else $where .= ( $inverse ? " != " : " = " ) . $this->glue->as_literal( $v ); 
+					else $where .= ( $inverse ? " != " : " = " ) . $this->as_literal( $v ); 
 					
 					$where .= ')';
 				}
@@ -240,26 +240,13 @@ class gpPageSet {
 	}
 	
 	public function create_table( ) {
-		$table = $this->table;
-		$t = "";
-		
-		if ( !$table || $table === '?' ) { 
-			$table = "gp_temp_" . $this->glue->next_id();
-			$t = " TEMPORARY ";
-		}
-		
-		$sql = "CREATE $t TABLE " . $table; 
-		$sql .= "(";
-		$sql .= $this->table_obj->get_field_definitions();
-		$sql .= ")";
-		
-		$this->query($sql);
-		
-		$this->table = $table;
-		$this->table_obj->set_name( $this->table );
-		$this->table_id_obj->set_name( $this->table );
+		#TODO: port this solution using make_temp_table to python!
+		$this->table_obj = $this->glue->make_temp_table( $this->table_obj );
 
-		return $table;  
+		$this->table = $this->table_obj->get_name();
+		$this->table_id_obj->set_name( $this->table );
+		
+		return $this->table;  
 		
 	}
 	
@@ -447,7 +434,7 @@ class gpPageSet {
 	}
 
 	public function strip_namespace( $ns, $inverse = false ) {
-		$where = $this->namespace_field . ' = ' . (int)$ns;
+		$where = array( $this->namespace_field => $ns );
 		return $this->strip( $where, null, $inverse );
 	}
 
@@ -502,7 +489,7 @@ class gpPageSet {
 	}
 
 	public function strip( $where, $join = null, $inverse = false ) { #TODO: port to python!
-		if ( $where ) $where = $this->glue->condition_sql($where);
+		if ( $where ) $where = $this->glue->condition_sql($where, true, $inverse);
 
 		if ( is_array($join) ) {
 			if ( isset( $join[0] ) ) { #indexed array
@@ -521,8 +508,8 @@ class gpPageSet {
 		}
 		
 		if ( $join ) {
-			$sql = 'DELETE FROM TTT ';
-			$sql .= ' USING ' . $this->table . ' AS TTT ';
+			$sql = 'DELETE FROM T ';
+			$sql .= ' USING ' . $this->table . ' AS T ';
 			$sql .= $join;
 		} else {
 			$sql = 'DELETE FROM ' . $this->table;
