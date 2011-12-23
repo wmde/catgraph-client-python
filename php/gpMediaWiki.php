@@ -465,7 +465,10 @@ class gpPageSet {
 	
 	public function size() { #TODO: port to python
 		$sql = "SELECT count(*) FROM " . $this->table;
-		return $this->glue->mysql_query_value($sql);
+		$v = $this->glue->mysql_query_value($sql);
+		
+		if ( $v || $v === "0" ) $v = (int)$v;
+		return $v;
 	}
 
 	public function strip_namespace( $ns, $inverse = false ) {
