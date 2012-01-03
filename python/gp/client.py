@@ -58,9 +58,18 @@ LINEBREAK = "\r\n"
 PORT = 6666
 """Default GraphServ port"""
 
-CLIENT_PROTOCOL_VERSION = 3
-"""Expected GraphServ protocol version. If GraphServ (resp. GraphCore)
-   reports a different protocol version, the conenction will be aborted."""
+CLIENT_PROTOCOL_VERSION = 4
+"""Implemented GraphServ protocol version. May be used to determin which
+   features are supported. Is not used to validate the peer's protocol version,
+   see MIN_PROTOCOL_VERSION and MAX_PROTOCOL_VERSION for that."""
+
+MIN_PROTOCOL_VERSION = 2.0
+"""Minimum GraphServ protocol version. If GraphServ (resp. GraphCore)
+   reports a lower protocol version, the connection will be aborted."""
+
+MAX_PROTOCOL_VERSION = 4.99
+"""Maximum GraphServ protocol version. If GraphServ (resp. GraphCore)
+   reports a higher protocol version, the connection will be aborted."""
 
 
 def __function__ (shift = 1): #XXX: wtf?
@@ -1283,23 +1292,34 @@ class Connection(object):
     
     def getProtocolVersion(self):
         """Return the protocol version reported by the peer."""
-        self.protocol_version()
-        version = self.statusMessage.strip()
-        return version
+        
+        if not _protocol_version:
+			self.protocol_version()
+			_protocol_version = self.statusMessage.strip()
+        
+        return self._protocol_version
           
     
     def checkProtocolVersion(self):
         """Can raise a gpProtocolException.
 
         It raises a gpProtocolException if the protocol version reported by the
-        peer is not compatible with CLIENT_PROTOCOL_VERSION.
+        peer is not compatible with MIN_PROTOCOL_VERSION and MAX_PROTOCOL_VERSION.
     
         """
         version = self.getProtocolVersion()
-        if int(version) != int(CLIENT_PROTOCOL_VERSION):
+        version = float(version)
+        
+        if version < MIN_PROTOCOL_VERSION:
             raise gpProtocolException(
-                "Bad protocol version: expected "
-                + str(CLIENT_PROTOCOL_VERSION)
+                "Bad protocol version: expected at least "
+                + str(MIN_PROTOCOL_VERSION)
+                + ", but peer uses %s" % str(version) )
+          
+        if version > MAX_PROTOCOL_VERSION:
+            raise gpProtocolException(
+                "Bad protocol version: expected at most "
+                + str(MAX_PROTOCOL_VERSION)
                 + ", but peer uses %s" % str(version) )
           
     
