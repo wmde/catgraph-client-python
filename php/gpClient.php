@@ -1301,7 +1301,7 @@ class gpConnection {
 			$map = false;
 		}
 		
-		if ( preg_match( '/-value$/', $cmd ) ) { #TODO: port to python
+		if ( preg_match( '/-value$/', $cmd ) ) { 
 			if ($capture) throw new gpUsageException( "using the _value suffix together with the capture_ prefix is meaningless" );
 			
 			$cmd = substr( $cmd, 0, strlen($cmd) -6 );
@@ -1367,7 +1367,7 @@ class gpConnection {
 
 		//note: call modifiers like "_capture" change the return type!
 		if ( $capture ) {
-			if ( $status == 'OK' || $status == 'VALUE' ) { #TODO: port VALUE to python
+			if ( $status == 'OK' || $status == 'VALUE' ) { 
 				if ( $has_output ) {
 					if ($map) return $sink->getMap();
 					else return $sink->getData();
@@ -1380,7 +1380,7 @@ class gpConnection {
 		} else {
 			if ( $result ) $status = $result; // from handler
 			
-			if ( $val ) { #TODO: port to python!
+			if ( $val ) { 
 				if ( $status == "VALUE" || $status == "OK" ) {
 					return $this->statusMessage; #XXX: not so pretty
 				} else {
@@ -1447,7 +1447,7 @@ class gpConnection {
 			
 			$strictArgs = $this->strictArguments;
 			
-			if ( $c == "set-meta" || $c == "authorize" ) { #XXX: ugly hack for wellknown commands #TODO: port to python 
+			if ( $c == "set-meta" || $c == "authorize" ) { #XXX: ugly hack for wellknown commands
 				$strictArgs = false;
 			}
 			
@@ -1526,7 +1526,7 @@ class gpConnection {
 		$this->status = $m[1];
 		$this->statusMessage = trim($m[2]);
 		
-		if ( $this->status != 'OK' && $this->status != 'NONE' && $this->status != 'VALUE' ) { #TODO: port VALUE to python
+		if ( $this->status != 'OK' && $this->status != 'NONE' && $this->status != 'VALUE' ) {
 			throw new gpProcessorException( $this->status, $m[2], $command );
 		}
 		
@@ -1595,8 +1595,8 @@ class gpConnection {
 	public static function isValidCommandArgument( $arg, $strict = true ) {
 		if ( $arg === '' || $arg === false || $arg === null ) return false;
 
-		if ( $strict ) return preg_match('/^\w[-\w]*$/', $arg); #TODO: port stricter pattern to python
-		else return !preg_match('/[\s\0-\x1F\x80-\xFF|<>!&#]/', $arg); //space, low chars, high chars, and operators. #TODO: port exclusion of spaces and inclusion of colons to python
+		if ( $strict ) return preg_match('/^\w[-\w]*$/', $arg);
+		else return !preg_match('/[\s\0-\x1F\x80-\xFF|<>!&#]/', $arg); //space, low chars, high chars, and operators. 
 	}
 	
 	/**

@@ -1386,6 +1386,15 @@ class Connection(object):
             else:
                 map_it = False
                  
+			if re.search( '-value$', cmd ):
+				if capture: 
+					raise gpUsageException( "using the _value suffix together with the capture_ prefix is meaningless" )
+				
+				cmd = cmd[:-6]
+				val = True
+			} else { 		
+				val = False
+			}
             
             result = None
 
@@ -1481,7 +1490,7 @@ class Connection(object):
             #note: call modifiers like capture change the return type!
             if capture:
                 
-                if status == 'OK':
+                if status == 'OK' or status == 'VALUE':
                     if self.__command_has_output:
                         if map_it:
                             return sink.getMap()
@@ -1497,9 +1506,15 @@ class Connection(object):
                     return False
             else:
                 if result:
-                    return result # from handler
-                else:
-                    return status
+                    status = result # from handler
+                    
+				if val:
+					if status == "VALUE" or status == "OK":
+						return self.statusMessage; #XXX: not so pretty
+					else:
+						raise gpUsageException( "Can't apply _value modifier: command " + command + " did not return a VALUE or OK status, but this: " + status )
+				
+                return status
                     
         setattr(self, name, exec_command) #re-use closure!
 
@@ -1570,6 +1585,10 @@ class Connection(object):
                 raise gpUsageException("invalid command name: %s" % c)
                 
             strictArgs = self.strictArguments
+
+			if c == "set-meta" or c == "authorize": #XXX: ugly hack for wellknown commands
+				strictArgs = False
+			
             for c in command:
                 if not isinstance(c, (str, unicode, int, long)):
                     raise gpUsageException(
@@ -1660,7 +1679,7 @@ class Connection(object):
         self.status = match.group(1)
         self.statusMessage = match.group(2).strip()
         
-        if self.status != 'OK' and self.status != 'NONE':
+        if self.status != 'OK' and self.status != 'NONE' and self.status != 'VALUE':
             raise gpProcessorException(
               self.status, self.statusMessage, command)
         
@@ -1770,10 +1789,10 @@ class Connection(object):
             return False
         
         if strict:
-            return re.match('^\w[-\w]*(:\w[-\w]*)?$', str(arg))
-            #XXX: the ":" is needed for user:passwd auth. not pretty. 
-        return( not re.search('[\0-\x1F\x80-\xFF:|<>!&#]', str(arg)))
-            # low chars, high chars, and operators.
+            return re.match('^\w[-\w]*$', str(arg))
+        else:
+			return not re.search('[\s\0-\x1F\x80-\xFF|<>!&#]', str(arg))
+			# low chars, high chars, and operators.
     
     @staticmethod
     def splitRow(s):
