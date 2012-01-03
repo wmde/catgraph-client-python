@@ -61,19 +61,19 @@ define( 'GP_PORT', 6666 );
  * client library supports. It is not validated against the peer's protocol version,
  * see GP_MIN_PROTOCOL_VERSION and GP_MAX_PROTOCOL_VERSION for that.
  */
-define( 'GP_CLIENT_PROTOCOL_VERSION', 4 ); #TODO: port min/max logic to python
+define( 'GP_CLIENT_PROTOCOL_VERSION', 4 ); 
 
 /**
  * Lowest acceptable GraphServ protocol version. If GraphServ (resp GraphCore)
  * reports a lower protocol version, the conenction is aborted.
  */
-define( 'GP_MIN_PROTOCOL_VERSION', 2.0 ); #TODO: port min/max logic to python
+define( 'GP_MIN_PROTOCOL_VERSION', 2.0 ); 
 
 /**
  * Highest acceptable GraphServ protocol version. If GraphServ (resp GraphCore)
  * reports a higher protocol version, the conenction is aborted.
  */
-define( 'GP_MAX_PROTOCOL_VERSION', 4.99 ); #TODO: port min/max logic to python
+define( 'GP_MAX_PROTOCOL_VERSION', 4.99 );
 
 /**
  * Base class for gpClient exceptions.
@@ -1229,7 +1229,7 @@ class gpConnection {
 	 * Returns the protocol version reported by the peer.
 	 */
 	public function getProtocolVersion() {
-		if ( empty($this->protocol_version) ) { #TODO: port lazy init to python!
+		if ( empty($this->protocol_version) ) { 
 			$this->protocol_version();
 			$this->protocol_version = trim($this->statusMessage);
 		}
@@ -1239,16 +1239,16 @@ class gpConnection {
 	
 	/**
 	 * Raises a gpProtocolException if the protocol version reported by the peer is
-	 * not compatible with GP_CLIENT_PROTOCOL_VERSION.
+	 * not compatible with GP_MIN_PROTOCOL_VERSION and GP_MAX_PROTOCOL_VERSION.
 	 */
 	public function checkProtocolVersion() {
 		$version = (float)$this->getProtocolVersion();
 		
-		if ( $version < GP_MIN_PROTOCOL_VERSION ) { #TODO: port min/max to python
+		if ( $version < GP_MIN_PROTOCOL_VERSION ) { 
 			throw new gpProtocolException( "Bad protocol version: expected at least " . GP_MIN_PROTOCOL_VERSION . ", but peer uses " . $version );
 		}
 
-		if ( $version > GP_MAX_PROTOCOL_VERSION ) { #TODO: port min/max to python
+		if ( $version > GP_MAX_PROTOCOL_VERSION ) {
 			throw new gpProtocolException( "Bad protocol version: expected at most " . GP_MAX_PROTOCOL_VERSION . ", but peer uses " . $version );
 		}
 	} 
