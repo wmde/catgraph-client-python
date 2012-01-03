@@ -115,7 +115,7 @@ class gpCoreTest extends gpSlaveTestBase
 		$this->assertEquals( array( array(11), array(112), array(1121), ), $succ );
 	}
 
-    public function testSetMeta() { #TODO: port to python
+    public function testSetMeta() { 
 		//define var
 		$this->gp->set_meta("foo", 1234);
 		$val = $this->gp->get_meta_value("foo");
@@ -163,8 +163,7 @@ class gpCoreTest extends gpSlaveTestBase
 		}
 	}
 
-    public function testGetMeta() { #TODO: port to python
-		//get undefined
+    public function testGetMeta() { 
 		$val = $this->gp->try_get_meta_value("foo");
 		$this->assertEquals( false, $val );
 		
@@ -179,7 +178,7 @@ class gpCoreTest extends gpSlaveTestBase
 		$this->assertEquals( false, $val );
 	}
 
-    public function testRemoveMeta() { #TODO: port to python
+    public function testRemoveMeta() { 
 		//remove undefined
 		$ok = $this->gp->try_remove_meta("foo");
 		$this->assertEquals( false, $ok );
@@ -190,7 +189,7 @@ class gpCoreTest extends gpSlaveTestBase
 		$this->assertEquals( "OK", $ok );
 	}
 
-    public function testListMeta() { #TODO: port to python
+    public function testListMeta() { 
 		// assert empty
 		$meta = $this->gp->capture_list_meta();
 		$this->assertEmpty( $meta );
