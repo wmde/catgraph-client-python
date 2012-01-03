@@ -114,7 +114,72 @@ class gpCoreTest extends gpSlaveTestBase
 
 		$this->assertEquals( array( array(11), array(112), array(1121), ), $succ );
 	}
-	
+
+    public function testSetMeta() { #TODO: port to python
+		$this->gp->set_meta("foo", 1234);
+		$val = $this->gp->get_meta_value("foo");
+		$this->assertEquals( "1234", $val );
+		
+		$this->gp->set_meta("foo", "bla/bla");
+		$val = $this->gp->get_meta_value("foo");
+		$this->assertEquals( "bla/bla", $val );
+		
+		# test bad -----------------------------------------
+		try {
+			$this->gp->set_meta("...", 1234);
+			$this->fail( "exception expected" );
+		} catch ( gpException $ex ) {
+			// ok
+		}
+
+		try {
+			$ok = $this->gp->try_set_meta("x y", 1234);
+			$this->fail( "exception expected" );
+		} catch ( gpException $ex ) {
+			// ok
+		}
+
+		try {
+			$this->gp->_set_meta("  ", 1234);
+			$this->fail( "exception expected" );
+		} catch ( gpException $ex ) {
+			// ok
+		}
+
+		try {
+			$this->gp->set_meta("foo", "bla bla");
+			$this->fail( "exception expected" );
+		} catch ( gpException $ex ) {
+			// ok
+		}
+
+		try {
+			$this->gp->set_meta("foo", "2<3");
+			$this->fail( "exception expected" );
+		} catch ( gpException $ex ) {
+			// ok
+		}
+	}
+
+    public function testGetMeta() { #TODO: port to python
+	}
+
+    public function testRemoveMeta() { #TODO: port to python
+	}
+
+    public function testListMeta() { #TODO: port to python
+		$meta = $this->gp->capture_list_meta();
+		$this->assertEmpty( $meta );
+		
+		$this->gp->set_meta("foo", 1234);
+		$meta = $this->gp->capture_list_meta_map();
+		$this->assertEquals( array("foo" => "1234"), $meta );
+		
+		$this->gp->remove_meta("foo");
+		$meta = $this->gp->capture_list_meta();
+		$this->assertEmpty( $meta );
+	}
+
     //TODO: add all the tests we have in the talkback test suit
     
 }

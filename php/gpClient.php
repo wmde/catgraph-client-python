@@ -57,10 +57,23 @@ define( 'GP_LINEBREAK', "\r\n" );
 define( 'GP_PORT', 6666 );
 
 /**
- * Expected GraphServ protocol version. If GraphServ (resp GraphCore)
- * reports a different protocol version, the conenction is aborted.
+ * Implemented GraphServ protocol version. This indicates what features the
+ * client library supports. It is not validated against the peer's protocol version,
+ * see GP_MIN_PROTOCOL_VERSION and GP_MAX_PROTOCOL_VERSION for that.
  */
-define( 'GP_CLIENT_PROTOCOL_VERSION', 3 );
+define( 'GP_CLIENT_PROTOCOL_VERSION', 4 ); #TODO: port min/max logic to python
+
+/**
+ * Lowest acceptable GraphServ protocol version. If GraphServ (resp GraphCore)
+ * reports a lower protocol version, the conenction is aborted.
+ */
+define( 'GP_MIN_PROTOCOL_VERSION', 2.0 ); #TODO: port min/max logic to python
+
+/**
+ * Highest acceptable GraphServ protocol version. If GraphServ (resp GraphCore)
+ * reports a higher protocol version, the conenction is aborted.
+ */
+define( 'GP_MAX_PROTOCOL_VERSION', 4.99 ); #TODO: port min/max logic to python
 
 /**
  * Base class for gpClient exceptions.
@@ -981,6 +994,11 @@ class gpSlaveTransport extends gpPipeTransport {
  *   a key-value pairs. If the _map suffix is used without the capture_ prefix, 
  *   a gpUsageException is raised.
  * 
+ * * if the method name is suffixed with _value, the command is expected
+ *   to return a value in the status line, prefixed by either "OK." or "VALUE:". 
+ *   The value is returned. If the command does not provide a VALUE or OK status,
+ *   an exception is raised.
+ * 
  * Modifiers can also be combined. For instance, try_capture_stats_map would
  * return GraphCore stats as an associative array, or null of the call failed.
  * 
@@ -1095,7 +1113,7 @@ class gpConnection {
 	 * 
 	 * * $connection this gpConnection instance
 	 * * &$cmd a reference to the command name, as a string, with the try_,
-	 *         capture_ and _map modifiers removed.  
+	 *         capture_, _map or _value modifiers removed.  
 	 * * &$args a reference to the argument array, unprocessed, as passed to
 	 *          the method.
 	 * * &$source a reference to a gpDatSource (or null), may be altered to 
@@ -1211,9 +1229,12 @@ class gpConnection {
 	 * Returns the protocol version reported by the peer.
 	 */
 	public function getProtocolVersion() {
-		$this->protocol_version();
-		$version = trim($this->statusMessage);
-		return $version;
+		if ( empty($this->protocol_version) ) { #TODO: port lazy init to python!
+			$this->protocol_version();
+			$this->protocol_version = trim($this->statusMessage);
+		}
+		
+		return $this->protocol_version;
 	} 
 	
 	/**
@@ -1221,8 +1242,15 @@ class gpConnection {
 	 * not compatible with GP_CLIENT_PROTOCOL_VERSION.
 	 */
 	public function checkProtocolVersion() {
-		$version = $this->getProtocolVersion();
-		if ( $version != GP_CLIENT_PROTOCOL_VERSION ) throw new gpProtocolException( "Bad protocol version: expected " . GP_CLIENT_PROTOCOL_VERSION . ", but peer uses " . $version );
+		$version = (float)$this->getProtocolVersion();
+		
+		if ( $version < GP_MIN_PROTOCOL_VERSION ) { #TODO: port min/max to python
+			throw new gpProtocolException( "Bad protocol version: expected at least " . GP_MIN_PROTOCOL_VERSION . ", but peer uses " . $version );
+		}
+
+		if ( $version > GP_MAX_PROTOCOL_VERSION ) { #TODO: port min/max to python
+			throw new gpProtocolException( "Bad protocol version: expected at most " . GP_MAX_PROTOCOL_VERSION . ", but peer uses " . $version );
+		}
 	} 
 	
 	/**
@@ -1271,6 +1299,15 @@ class gpConnection {
 			$map = true;
 		} else { 		
 			$map = false;
+		}
+		
+		if ( preg_match( '/-value$/', $cmd ) ) { #TODO: port to python
+			if ($capture) throw new gpUsageException( "using the _value suffix together with the capture_ prefix is meaningless" );
+			
+			$cmd = substr( $cmd, 0, strlen($cmd) -6 );
+			$val = true;
+		} else { 		
+			$val = false;
 		}
 		
 		$result = null;
@@ -1328,9 +1365,9 @@ class gpConnection {
 			else return false;
 		}
 
-		//note: call modifiers like capture change the return type!
+		//note: call modifiers like "_capture" change the return type!
 		if ( $capture ) {
-			if ( $status == 'OK' ) {
+			if ( $status == 'OK' || $status == 'VALUE' ) { #TODO: port VALUE to python
 				if ( $has_output ) {
 					if ($map) return $sink->getMap();
 					else return $sink->getData();
@@ -1341,8 +1378,17 @@ class gpConnection {
 			else if ( $status == 'NONE' ) return null;
 			else return false;
 		} else {
-			if ( $result ) return $result; // from handler
-			else return $status;
+			if ( $result ) $status = $result; // from handler
+			
+			if ( $val ) { #TODO: port to python!
+				if ( $status == "VALUE" || $status == "OK" ) {
+					return $this->statusMessage; #XXX: not so pretty
+				} else {
+					throw new gpUsageException( "Can't apply _value modifier: command " . $command . " did not return a VALUE or OK status, but this: " . $status );
+				}
+			}
+			
+			return $status;
 		}
     }
     
@@ -1366,7 +1412,7 @@ class gpConnection {
 	 * @throws gpProtocolException if a communication error ocurred while talking to the peer
 	 * @throws gpProcessorException if the peer reported an error
 	 * @throws gpUsageException if $command does not conform to the rules for commands. Note that
-	 *         $this->strictArguments and $this->alloPipes influence which commands are allowed.
+	 *         $this->strictArguments and $this->allowPipes influence which commands are allowed.
 	 */
 	public function exec( $command, gpDataSource $source = null, gpDataSink $sink = null, &$has_output = null ) {
 		$this->trace(__METHOD__, "BEGIN");
@@ -1400,6 +1446,11 @@ class gpConnection {
 			}
 			
 			$strictArgs = $this->strictArguments;
+			
+			if ( $c == "set-meta" || $c == "authorize" ) { #XXX: ugly hack for wellknown commands #TODO: port to python 
+				$strictArgs = false;
+			}
+			
 			foreach ( $command as $c ) {
 				if ( is_array( $c ) || is_object( $c ) ) throw new gpUsageException("invalid argument type: " . gettype($c));
 				
@@ -1475,7 +1526,7 @@ class gpConnection {
 		$this->status = $m[1];
 		$this->statusMessage = trim($m[2]);
 		
-		if ( $this->status != 'OK' && $this->status != 'NONE' ) {
+		if ( $this->status != 'OK' && $this->status != 'NONE' && $this->status != 'VALUE' ) { #TODO: port VALUE to python
 			throw new gpProcessorException( $this->status, $m[2], $command );
 		}
 		
@@ -1544,9 +1595,8 @@ class gpConnection {
 	public static function isValidCommandArgument( $arg, $strict = true ) {
 		if ( $arg === '' || $arg === false || $arg === null ) return false;
 
-		if ( $strict ) return preg_match('/^\w[-\w]*(:\w[-\w]*)?$/', $arg); //XXX: the ":" is needed for user:passwd auth. not pretty. 
-		
-		return !preg_match('/[\0-\x1F\x80-\xFF:|<>!&#]/', $arg); //low chars, high chars, and operators.
+		if ( $strict ) return preg_match('/^\w[-\w]*$/', $arg); #TODO: port stricter pattern to python
+		else return !preg_match('/[\s\0-\x1F\x80-\xFF:|<>!&#]/', $arg); //space, low chars, high chars, and operators. #TODO: port exclusion of spaces to python
 	}
 	
 	/**
