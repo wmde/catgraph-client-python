@@ -120,11 +120,93 @@ class CoreTest (SlaveTestBase, unittest.TestCase):
 
         self.assertEquals( [ (11,), (112,), (1121,), ], succ )
     
+    def test_setMeta(self):
+        #define var
+        self.gp.set_meta("foo", 1234)
+        val = self.gp.get_meta_value("foo")
+        self.assertEquals( "1234", val )
+        
+        #redefine var
+        self.gp.set_meta("foo", "bla/bla")
+        val = self.gp.get_meta_value("foo")
+        self.assertEquals( "bla/bla", val )
+        
+        # test bad -----------------------------------------
+        try:
+            self.gp.set_meta("...", 1234)
+            self.fail( "exception expected" )
+        except gpException as ex:
+            pass
+
+        try:
+            self.gp.set_meta("x y", 1234)
+            self.fail( "exception expected" )
+        except gpException as ex:
+            pass
+
+        try:
+            self.gp._set_meta("  ", 1234)
+            self.fail( "exception expected" )
+        except gpException as ex:
+            pass
+
+        try:
+            self.gp.set_meta("foo", "bla bla")
+            self.fail( "exception expected" )
+        except gpException as ex:
+            pass
+
+        try:
+            self.gp.set_meta("foo", "2<3")
+            self.fail( "exception expected" )
+        except gpException as ex:
+            pass
+
+    def test_getMeta(self):
+        #get undefined
+        val = self.gp.try_get_meta_value("foo")
+        self.assertEquals( False, val )
+        
+        #set var, and get value
+        self.gp.set_meta("foo", "xxx")
+        val = self.gp.get_meta_value("foo")
+        self.assertEquals( "xxx", val )
+        
+        #remove var, then get value
+        self.gp.remove_meta("foo")
+        val = self.gp.try_get_meta_value("foo")
+        self.assertEquals( False, val )
+
+    def test_removeMeta(self):
+        #remove undefined
+        ok = self.gp.try_remove_meta("foo")
+        self.assertEquals( False, ok )
+        
+        #set var, then remove it
+        self.gp.set_meta("foo", "xxx")
+        ok = self.gp.try_remove_meta("foo")
+        self.assertEquals( "OK", ok )
+
+    def test_listMeta(self):
+        # assert empty
+        meta = self.gp.capture_list_meta()
+        self.assertEmpty( meta )
+        
+        # add one, assert list
+        self.gp.set_meta("foo", 1234)
+        meta = self.gp.capture_list_meta_map()
+        self.assertEquals( { "foo": 1234}, meta )
+        
+        # remove one, assert empty
+        self.gp.remove_meta("foo")
+        meta = self.gp.capture_list_meta()
+        self.assertEmpty( meta )
+    
     
     #TODO: add all the tests we have in the talkback test suit
     
 
 if __name__ == '__main__':
-	unittest.main()
+    unittest.main()
 
 

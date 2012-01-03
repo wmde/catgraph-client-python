@@ -1126,6 +1126,8 @@ class Connection(object):
         self.debug = False
         """Debug mode enables lots of output to stdout."""
         self.graphname = graphname #TODO: port this to PHP
+        
+        self._protocol_version = None
  
     def connect(self):
         """ Connect to the peer. 
@@ -1293,9 +1295,9 @@ class Connection(object):
     def getProtocolVersion(self):
         """Return the protocol version reported by the peer."""
         
-        if not _protocol_version:
-			self.protocol_version()
-			_protocol_version = self.statusMessage.strip()
+        if not self._protocol_version:
+            self.protocol_version()
+            self._protocol_version = self.statusMessage.strip()
         
         return self._protocol_version
           
@@ -1386,15 +1388,14 @@ class Connection(object):
             else:
                 map_it = False
                  
-			if re.search( '-value$', cmd ):
-				if capture: 
-					raise gpUsageException( "using the _value suffix together with the capture_ prefix is meaningless" )
-				
-				cmd = cmd[:-6]
-				val = True
-			} else { 		
-				val = False
-			}
+            if re.search( '-value$', cmd ):
+                if capture: 
+                    raise gpUsageException( "using the _value suffix together with the capture_ prefix is meaningless" )
+                
+                cmd = cmd[:-6]
+                val = True
+            else:
+                val = False
             
             result = None
 
@@ -1508,12 +1509,12 @@ class Connection(object):
                 if result:
                     status = result # from handler
                     
-				if val:
-					if status == "VALUE" or status == "OK":
-						return self.statusMessage; #XXX: not so pretty
-					else:
-						raise gpUsageException( "Can't apply _value modifier: command " + command + " did not return a VALUE or OK status, but this: " + status )
-				
+                if val:
+                    if status == "VALUE" or status == "OK":
+                        return self.statusMessage; #XXX: not so pretty
+                    else:
+                        raise gpUsageException( "Can't apply _value modifier: command " + command + " did not return a VALUE or OK status, but this: " + status )
+                
                 return status
                     
         setattr(self, name, exec_command) #re-use closure!
@@ -1586,9 +1587,9 @@ class Connection(object):
                 
             strictArgs = self.strictArguments
 
-			if c == "set-meta" or c == "authorize": #XXX: ugly hack for wellknown commands
-				strictArgs = False
-			
+            if c == "set-meta" or c == "authorize": #XXX: ugly hack for wellknown commands
+                strictArgs = False
+            
             for c in command:
                 if not isinstance(c, (str, unicode, int, long)):
                     raise gpUsageException(
@@ -1791,8 +1792,8 @@ class Connection(object):
         if strict:
             return re.match('^\w[-\w]*$', str(arg))
         else:
-			return not re.search('[\s\0-\x1F\x80-\xFF|<>!&#]', str(arg))
-			# low chars, high chars, and operators.
+            return not re.search('[\s\0-\x1F\x80-\xFF|<>!&#]', str(arg))
+            # low chars, high chars, and operators.
     
     @staticmethod
     def splitRow(s):

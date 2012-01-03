@@ -135,7 +135,7 @@ class gpCoreTest extends gpSlaveTestBase
 		}
 
 		try {
-			$ok = $this->gp->try_set_meta("x y", 1234);
+			$this->gp->set_meta("x y", 1234);
 			$this->fail( "exception expected" );
 		} catch ( gpException $ex ) {
 			// ok
