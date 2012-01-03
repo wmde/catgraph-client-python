@@ -19,6 +19,12 @@ class gpSlaveTest extends gpSlaveTestBase
 		$this->assertEquals( 'FAILED', $this->gp->getStatus() );
     }    
     
+    public function testValue() {
+		$v = $this->gp->protocol_version_value();
+
+		$this->assertTrue( is_numeric($v) );
+    }    
+    
 	public function testCapture() {
 		// empty data
 		$a = $this->gp->capture_list_roots();
@@ -229,9 +235,6 @@ class gpSlaveTest extends gpSlaveTestBase
 		$this->assertArgumentRejected( null );
 		$this->assertArgumentRejected( false );
 		$this->assertArgumentRejected( ' x ' );
-		
-		//$this->gp->setTimeout(2); // has no effect for pipes
-		$this->assertArgumentAccepted( 'x:y' ); // needed for password auth! //NOTE: This is broken in graphcore (but works via graphserv)!
 		
 		$this->assertArgumentAccepted( '123' );
 		$this->assertArgumentAccepted( 'x' );

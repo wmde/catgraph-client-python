@@ -1596,7 +1596,7 @@ class gpConnection {
 		if ( $arg === '' || $arg === false || $arg === null ) return false;
 
 		if ( $strict ) return preg_match('/^\w[-\w]*$/', $arg); #TODO: port stricter pattern to python
-		else return !preg_match('/[\s\0-\x1F\x80-\xFF:|<>!&#]/', $arg); //space, low chars, high chars, and operators. #TODO: port exclusion of spaces to python
+		else return !preg_match('/[\s\0-\x1F\x80-\xFF|<>!&#]/', $arg); //space, low chars, high chars, and operators. #TODO: port exclusion of spaces and inclusion of colons to python
 	}
 	
 	/**

@@ -116,10 +116,12 @@ class gpCoreTest extends gpSlaveTestBase
 	}
 
     public function testSetMeta() { #TODO: port to python
+		//define var
 		$this->gp->set_meta("foo", 1234);
 		$val = $this->gp->get_meta_value("foo");
 		$this->assertEquals( "1234", $val );
 		
+		//redefine var
 		$this->gp->set_meta("foo", "bla/bla");
 		$val = $this->gp->get_meta_value("foo");
 		$this->assertEquals( "bla/bla", $val );
@@ -162,19 +164,43 @@ class gpCoreTest extends gpSlaveTestBase
 	}
 
     public function testGetMeta() { #TODO: port to python
+		//get undefined
+		$val = $this->gp->try_get_meta_value("foo");
+		$this->assertEquals( false, $val );
+		
+		//set var, and get value
+		$this->gp->set_meta("foo", "xxx");
+		$val = $this->gp->get_meta_value("foo");
+		$this->assertEquals( "xxx", $val );
+		
+		//remove var, then get value
+		$this->gp->remove_meta("foo");
+		$val = $this->gp->try_get_meta_value("foo");
+		$this->assertEquals( false, $val );
 	}
 
     public function testRemoveMeta() { #TODO: port to python
+		//remove undefined
+		$ok = $this->gp->try_remove_meta("foo");
+		$this->assertEquals( false, $ok );
+		
+		//set var, then remove it
+		$this->gp->set_meta("foo", "xxx");
+		$ok = $this->gp->try_remove_meta("foo");
+		$this->assertEquals( "OK", $ok );
 	}
 
     public function testListMeta() { #TODO: port to python
+		// assert empty
 		$meta = $this->gp->capture_list_meta();
 		$this->assertEmpty( $meta );
 		
+		// add one, assert list
 		$this->gp->set_meta("foo", 1234);
 		$meta = $this->gp->capture_list_meta_map();
 		$this->assertEquals( array("foo" => "1234"), $meta );
 		
+		// remove one, assert empty
 		$this->gp->remove_meta("foo");
 		$meta = $this->gp->capture_list_meta();
 		$this->assertEmpty( $meta );
