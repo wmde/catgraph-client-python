@@ -1,6 +1,7 @@
 from test_base import *
 from gp.client import *
 from gp.mysql import *
+from gp.mysql import _fetch_dict
 
 import unittest
 import sys
@@ -102,7 +103,7 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
         self.assertEquals( [ ( 3, 8 ), ( 7, 9 ), ( 11, 11 ) ], data )
     
     def assertNextRowEquals(self, expected, res):
-        row = res.fetch_dict()
+        row = _fetch_dict(res)
         self.assertTrue( TestBase.dictEquals(expected, row), "expected row to be %s, got %s" % (expected, row) )
         
     def test_TempSink(self):
@@ -117,7 +118,7 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
         
         self.assertNextRowEquals({ 'a': 4, 'b': 5 }, res )
         self.assertNextRowEquals({ 'a': 6, 'b': 7 }, res )
-        self.assertFalse( res.fetch_dict(), "expected next row to be false" )
+        self.assertFalse( res.fetchone(), "expected next row to be false" )
         
         res.close()
         
@@ -228,7 +229,7 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
         self.assertNextRowEquals({ 'n': 12L }, res )
         self.assertNextRowEquals({ 'n': 111L }, res )
         self.assertNextRowEquals({ 'n': 112L }, res )
-        self.assertFalse(  res.fetch_dict(), "expected next row to be False" )
+        self.assertFalse(  res.fetchone(), "expected next row to be False" )
         
         res.close()
         
@@ -247,7 +248,7 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
         self.assertNextRowEquals({ 'n': 12 }, res )
         self.assertNextRowEquals({ 'n': 111 }, res )
         self.assertNextRowEquals({ 'n': 112 }, res )
-        self.assertFalse(  res.fetch_dict(), "expected next row to be False" )
+        self.assertFalse(  res.fetchone(), "expected next row to be False" )
         
         res.close()
     
@@ -272,7 +273,7 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
         self.assertNextRowEquals({ 'n': 12 }, res )
         self.assertNextRowEquals({ 'n': 111 }, res )
         self.assertNextRowEquals({ 'n': 112 }, res )
-        self.assertFalse(  res.fetch_dict(), "expected next row to be False" )
+        self.assertFalse(  res.fetchone(), "expected next row to be False" )
         
         res.close()
         snk.drop()
@@ -289,7 +290,7 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
         self.assertNextRowEquals({ 'n': 12 }, res )
         self.assertNextRowEquals({ 'n': 111 }, res )
         self.assertNextRowEquals({ 'n': 112 }, res )
-        self.assertFalse(  res.fetch_dict(), "expected next row to be False" )
+        self.assertFalse(  res.fetchone(), "expected next row to be False" )
         
         res.close()
         snk.drop()
@@ -306,7 +307,7 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
         self.assertNextRowEquals({ 'n': 12 }, res )
         self.assertNextRowEquals({ 'n': 111 }, res )
         self.assertNextRowEquals({ 'n': 112 }, res )
-        self.assertFalse(  res.fetch_dict(), "expected next row to be False" )
+        self.assertFalse(  res.fetchone(), "expected next row to be False" )
         
         res.close()
         snk.drop()
@@ -325,7 +326,7 @@ class MySQLTest (SlaveTestBase, unittest.TestCase):
         self.assertNextRowEquals({ 'n': 12 }, res )
         self.assertNextRowEquals({ 'n': 111 }, res )
         self.assertNextRowEquals({ 'n': 112 }, res )
-        self.assertFalse(  res.fetch_dict(), "expected next row to be False" )
+        self.assertFalse(  res.fetchone(), "expected next row to be False" )
         
         res.close()
     

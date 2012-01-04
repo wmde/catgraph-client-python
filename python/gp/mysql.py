@@ -17,7 +17,7 @@ class MySQLSource (DataSource):
 		# XXX: if we knew that the order of fields in the result set is the same
 		#	  as the order given in self.table, we could just use result.fetchone()
 		
-		raw = self.result.fetch_dict(  )
+		raw = _fetch_dict( self.result )
 		
 		if not raw: 
 			raise StopIteration()
@@ -285,8 +285,17 @@ class MySQLTempSink (MySQLSink):
 		return self.table
 		
 def _fetch_dict( cursor ):
+	try:
+		row = cursor.fetch_dict(  )
+		return row
+	except AttributeError:
+		pass
+		
 	r = cursor.fetchone()
 	if r is None: return None
+	
+	if hasattr(r, "has_key"):
+		return r # it's a dict!
 
 	row = {}
 	
@@ -388,8 +397,11 @@ class MySQLGlue (Connection):
 		
 		if not dict_rows:
 			# HACK: glue a fetch_dict method to a cursor that natively returns sequences from fetchone()
-			m = types.MethodType(_fetch_dict, cursor, cursor.__class__)
-			setattr(cursor, "fetch_dict", m)
+			# FIXME: if we do this, we for some reason retain a reference to the cursor forever!
+			#        
+			#m = types.MethodType(_fetch_dict, cursor, cursor.__class__)
+			#setattr(cursor, "fetch_dict", m)
+			pass
 		else:
 			# make fetch_dict an alias for fetchone
 			cursor.fetch_dict = cursor.fetchone # TESTME
@@ -712,7 +724,7 @@ class MySQLGlue (Connection):
 		
 		print ""
 		while True:
-			row = res.fetch_dict()
+			row = _fetch_dict(res)
 			if not row: break
 			
 			if keys is None :
