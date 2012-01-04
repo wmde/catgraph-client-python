@@ -1833,7 +1833,7 @@ class Connection(object):
             row = re.split(' *[;,\t] *', s)
             
             for i, entry in enumerate(row):
-                if re.match('^\d+$', entry):
+                if re.match('^\d{1,9}$', entry): #TODO: port to python: no more than 9 chars for int conversion!
                     row[i] = int(entry)
                     
             row = tuple(row)

@@ -483,6 +483,9 @@ class MySQLGlue (Connection):
 			return super(MySQLGlue, self).__getattr__(name)
 	
 	def quote_string (self, s ): #TODO: charset
+		if type(s) not in (str, unicode):
+			s = "%s" % s
+			
 		return "'" + self.connection.escape_string( s ) + "'"
 	
 	def as_list (self, values ):
