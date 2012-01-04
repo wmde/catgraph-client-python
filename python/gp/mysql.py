@@ -628,7 +628,7 @@ class MySQLGlue (Connection):
 	def make_source (self, table, big = False ):
 		sql = table._get_select()
 		
-		if not re.search(r'\s+ORDER\s+BY\s+', sql, flags = re.IGNORECASE) :
+		if not re.search(r'\s+ORDER\s+BY\s+', sql, flags = re.IGNORECASE | re.DOTALL ) :
 			sql += ' ' + table.get_order_by()
 		
 		

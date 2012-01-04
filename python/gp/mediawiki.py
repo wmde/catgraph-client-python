@@ -79,6 +79,7 @@ class MediaWikiGlue (MySQLGlue) :
         src = self.make_source( MySQLSelect( sql ) )
         
         self.add_arcs( src )
+        src.close()
     
      
     def get_subcategories ( self, cat, depth, without = None, without_depth = None ) :
@@ -283,17 +284,23 @@ class PageSet :
 
     def copy_to_sink ( self, ns, sink ) :
         src = self.make_source(ns)
-        return self.glue.copy(src, sink, "~")
+        c = self.glue.copy(src, sink, "~")
+        src.close()
+        return c
     
 
     def copy_ids_to_sink ( self, ns, sink ) :
         src = self.make_id_source(ns)
-        return self.glue.copy(src, sink, "~")
+        c = self.glue.copy(src, sink, "~")
+        src.close()
+        return c
     
 
     def add_source ( self, src ) :
         sink = self.make_sink()
-        return self.glue.copy( src, sink, "+" )
+        c = self.glue.copy( src, sink, "+" )
+        sink.close()
+        return c
     
 
     def add_page_set ( self, set ) :
@@ -316,6 +323,8 @@ class PageSet :
         ok = self.subtract_table(t, "page_id")
         
         self.glue.drop_temp_table(t)
+        sink.close()
+        
         return ok
     
 
@@ -334,6 +343,8 @@ class PageSet :
         ok = self.retain_table(t, "page_id")
         
         self.glue.drop_temp_table(t)
+        sink.close()
+        
         return ok
     
 
