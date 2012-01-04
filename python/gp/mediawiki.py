@@ -23,7 +23,7 @@ NS_CATEGORY_TALK = 15
 
 class MediaWikiGlue (MySQLGlue) :
     
-    def __init__( self, transport, graphname ) :
+    def __init__( self, transport, graphname = None ) :
         super(MediaWikiGlue, self).__init__(transport, graphname)
         
         self.table_prefix = ""
@@ -122,7 +122,7 @@ class MediaWikiGlue (MySQLGlue) :
     
     @staticmethod
     def new_slave_connection( command, cwd = None, env = None ) :
-        return MediaWikiGlue( SlaveTransport(command, cwd, env) )
+        return MediaWikiGlue( SlaveTransport(command, cwd, env), None )
     
 
 
@@ -172,7 +172,7 @@ class PageSet :
         sql += self.table_obj.get_field_definitions()
         sql += ")"
         
-        self._query(sql)
+        self._update(sql)
         
         self.table = table
         self.table_obj.set_name( self.table )
@@ -186,6 +186,8 @@ class PageSet :
         if ( self.big ): return self.glue.mysql_unbuffered_query(sql)
         else: return self.glue.mysql_query(sql)
     
+    def _update( self, sql ) : #TODO: port to PHP; use in PHP!
+        return self.glue.mysql_update(sql)
     
     def add_from_select ( self, select ) :
         sql= "REPLACE INTO " + self.table + " "
@@ -195,14 +197,14 @@ class PageSet :
         sql += self.title_field + " ) "
         sql += select
         
-        return self._query( sql )
+        return self._update( sql )
     
     
     def delete_where ( self, where ) :
         sql= "DELETE FROM " + self.table + " "
         sql += where
         
-        return self._query( sql )
+        return self._update( sql )
     
     
     def delete_using ( self, using, tableAlias = "T" ) :
@@ -210,7 +212,7 @@ class PageSet :
         sql += "USING " + self.table + " AS " + tableAlias + " "
         sql += using
         
-        return self._query( sql )
+        return self._update( sql )
     
     
     def resolve_ids ( self, ) :
@@ -225,7 +227,7 @@ class PageSet :
         sql += " FROM " +  self.table
         sql += " WHERE page_title IS NULL"
         
-        self._query( sql );  #copy page ids with no page title into temp table
+        self._update( sql );  #copy page ids with no page title into temp table
         
         sql = "SELECT P.page_id, P.page_namespace, P.page_title "
         sql += " FROM " + self.glue.wiki_table("page") + " AS P "
@@ -343,7 +345,7 @@ class PageSet :
         sql += " JOIN " + table.get_name() + " AS R "
         sql += " ON T." + self.id_field + " = R." + id_field
         
-        self._query(sql)
+        self._update(sql)
         return True
     
 
@@ -356,7 +358,7 @@ class PageSet :
         sql += " ON T." + self.id_field + " = R." + id_field
         sql += " WHERE R." + id_field + " IS NULL"
         
-        self._query(sql)
+        self._update(sql)
         return True
     
 
@@ -365,7 +367,7 @@ class PageSet :
         sql += " WHERE " + self.namespace_field + " = %i" % int(ns)
         sql += " AND " + self.title_field + " = " + self.glue.quote_string(title)
         
-        self._query(sql)
+        self._update(sql)
         return True
     
     
@@ -373,7 +375,7 @@ class PageSet :
         sql = "DELETE FROM " + self.table
         sql += " WHERE " + self.id_field + " = %i" % int(id)
         
-        self._query(sql)
+        self._update(sql)
         return True
     
 
@@ -384,7 +386,7 @@ class PageSet :
         if ( isinstance(ns, (tuple, list, set)) ): sql +=  ( " not in " if inverse else " in " ) + self.glue.as_list( ns )
         else: sql += ( " != " if inverse else " = " ) + str(int(ns))
             
-        self._query(sql)
+        self._update(sql)
         return True
     
 
@@ -401,7 +403,7 @@ class PageSet :
         sql += " VALUES "
         sql += self.glue.as_list(values)
         
-        self._query( sql )
+        self._update( sql )
         return True
     
 
@@ -413,7 +415,7 @@ class PageSet :
         sql += " VALUES "
         sql += self.glue.as_list(values)
         
-        self._query( sql )
+        self._update( sql )
         return True
     
     
@@ -430,7 +432,7 @@ class PageSet :
         sql += " from " + self.table + " as T "
         sql += " where page_namespace = %i " % NS_CATEGORY
     
-        self._query( sql )
+        self._update( sql )
         #self.glue.dump_query("select * from " +tmp.get_name())
         
         # ----------------------------------------------------------
@@ -481,8 +483,10 @@ class PageSet :
     
     def get_size(self):
         res = self._query("SELECT COUNT(*) FROM " + self.table)
-        row = res.fetchone()
-        res.close()
+        try:
+            row = res.fetchone()
+        finally:
+            res.close()
         
         return row[0]
     
@@ -514,13 +518,13 @@ class PageSet :
 
     def clear ( self, ) :
         sql = "TRUNCATE " + self.table
-        self._query(sql)
+        self._update(sql)
         return True
     
 
     def dispose ( self, ) :
         sql = "DROP TEMPORARY TABLE " + self.table
-        self._query(sql)
+        self._update(sql)
         return True
     
 

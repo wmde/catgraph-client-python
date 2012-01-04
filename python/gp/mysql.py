@@ -199,7 +199,7 @@ class MySQLSimpleInserter (MySQLInserter):
 		sql += " VALUES "
 		sql += self.as_list(values)
 		
-		self.glue.mysql_query( sql )
+		self.glue.mysql_update( sql )
 	
 
 
@@ -234,7 +234,7 @@ class MySQLBufferedInserter (MySQLSimpleInserter):
 	
 	def flush (self):
 		if len(self.buffer)>0:
-			self.glue.mysql_query( self.buffer )
+			self.glue.mysql_update( self.buffer )
 			self.buffer = ""
 
 
@@ -273,7 +273,7 @@ class MySQLTempSink (MySQLSink):
 	def drop (self):
 		sql = "DROP TEMPORARY TABLE IF EXISTS %s" % self.table.get_name()
 		
-		ok = self.glue.mysql_query( sql )
+		ok = self.glue.mysql_update( sql )
 		return ok
 	
 	
@@ -302,7 +302,9 @@ class MySQLGlue (Connection):
 		super(MySQLGlue, self).__init__(transport, graphname)
 		
 		self.connection = None
+		
 		self.unbuffered = False
+		self._update_cursor = None
         
 		self.temp_table_prefix = "gp_temp_"
 		self.temp_table_db = None
@@ -341,30 +343,48 @@ class MySQLGlue (Connection):
 	def mysql_unbuffered_query( self, sql ):
 		return self.mysql_query( sql, True )
 		
-	def mysql_query( self, sql, unbuffered = None, dict_rows = False ):
+	def mysql_update( self, sql ): #TODO: port to PHP; use in PHP!
+		if not self.update_cursor:
+			self._update_cursor = MySQLdb.cursors.SSCursor(self.connection)
+		
+		self.mysql_query( sql, True, False, self._update_cursor )
+		
+		return self.connection.affected_rows()
+		
+	def mysql_query( self, sql, unbuffered = None, dict_rows = False, cursor = None ):
 		if unbuffered is None:
 			unbuffered = self.unbuffered
 			
-		if unbuffered:
-			if dict_rows:
-				# no buffering, returns dicts
-				cursor = MySQLdb.cursors.SSDictCursor(self.connection) # TESTME
-			else:
-				# no buffering, returns tuples
-				cursor = MySQLdb.cursors.SSCursor(self.connection) # TESTME
+		if cursor:
+			using_new_cursor = False
 		else:
-			if dict_rows:
-				# buffers result, returns dicts
-				cursor = MySQLdb.cursors.DictCursor(self.connection) # TESTME
+			using_new_cursor = True
+				
+			if unbuffered:
+				if dict_rows:
+					# no buffering, returns dicts
+					cursor = MySQLdb.cursors.SSDictCursor(self.connection) # TESTME
+				else:
+					# no buffering, returns tuples
+					cursor = MySQLdb.cursors.SSCursor(self.connection) # TESTME
 			else:
-				# default: buffered tuples
-				cursor = MySQLdb.cursors.Cursor(self.connection) 
+				if dict_rows:
+					# buffers result, returns dicts
+					cursor = MySQLdb.cursors.DictCursor(self.connection) # TESTME
+				else:
+					# default: buffered tuples
+					cursor = MySQLdb.cursors.Cursor(self.connection) 
 		
 		with warnings.catch_warnings():
 			#ignore MySQL warnings. use cursor.nfo() to get them.
 			warnings.simplefilter("ignore")
-			
-			cursor.execute( sql ) 
+		
+			try:
+				cursor.execute( sql ) 
+			except:
+				if using_new_cursor:
+					cursor.close() #NOTE: *always* close the cursor if an exception ocurred.
+					raise
 		
 		if not dict_rows:
 			# HACK: glue a fetch_dict method to a cursor that natively returns sequences from fetchone()
@@ -516,7 +536,7 @@ class MySQLGlue (Connection):
 	
 	def drop_temp_table (self, spec ):
 		sql = "DROP TEMPORARY TABLE %s" % spec.get_name()
-		self.mysql_query(sql)
+		self.mysql_update(sql)
 	
 	
 	def make_temp_table (self, spec ):
@@ -533,7 +553,7 @@ class MySQLGlue (Connection):
 		sql += spec.get_field_definitions()
 		sql += ")"
 		
-		self.mysql_query(sql)
+		self.mysql_update(sql)
 		
 		return MySQLTable(table, spec.get_fields())
 	
@@ -546,8 +566,10 @@ class MySQLGlue (Connection):
 	
 	def mysql_query_record (self, sql ):
 		cursor = self.mysql_query( sql )
-		a = cursor.fetchone()
-		cursor.close()
+		try:
+			a = cursor.fetchone()
+		finally:
+			cursor.close()
 		
 		if ( not a ): return None
 		else: return a
@@ -623,7 +645,10 @@ class MySQLGlue (Connection):
 		query += " INTO %s DATA OUTFILE " % r #TESTME
 		query += self.quote_string(file)
 		
-		return self.mysql_query(query)
+		cursor = self.mysql_query(query)
+		cursor.close()
+		
+		return self.connection.affected_rows()
 	
 
 	def insert_from_file (self, table, file, remote = False ):
@@ -634,10 +659,20 @@ class MySQLGlue (Connection):
 		query += self.quote_string(file)
 		query += " INTO TABLE %s " % table
 		
-		return self.mysql_query(query)
+		cursor = self.mysql_query(query)
+		cursor.close()
+		
+		return self.connection.affected_rows()
 	
 	
 	def close(self):
+		if self._update_cursor:
+			try:
+				self._update_cursor.close()
+			except Exception as e:
+				self._trace(__function__(), "failed to close mysql cursor: %s" % e)
+				#XXX: do we really not care? can we go on? could there have been a commit pending?
+		
 		if self.connection:
 			try:
 				self._trace(__function__(), "closing mysql connection")
@@ -656,7 +691,7 @@ class MySQLGlue (Connection):
 
 	@staticmethod
 	def new_slave_connection(command, cwd = None, env = None ):
-		return MySQLGlue( SlaveTransport(command, cwd, env) )
+		return MySQLGlue( SlaveTransport(command, cwd, env), None )
 	
 	
 	def dump_query (self, sql ):
@@ -665,7 +700,10 @@ class MySQLGlue (Connection):
 		res = self.mysql_query( sql )
 		if ( not res ): return False
 		
-		return self.dump_result( res )
+		c = self.dump_result( res )
+		res.close()
+		
+		return c
 	
 	
 	def dump_result (self, res ):
