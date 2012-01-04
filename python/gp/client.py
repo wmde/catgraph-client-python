@@ -1301,6 +1301,22 @@ class Connection(object):
         
         return self._protocol_version
           
+    def supportsProtocolVersion(self, min_version, max_version = None): #TODO: port to PHP
+        """returns True if the peer's protocol version is at least
+           min_version and, if given, no grater than max_version.
+        """
+        
+        version = self.getProtocolVersion()
+        version = float(version)
+        
+        if min_version and version < min_version:
+            return False
+          
+        if max_version and version > max_version:
+            return False
+            
+        return True
+        
     
     def checkProtocolVersion(self):
         """Can raise a gpProtocolException.
@@ -1309,6 +1325,7 @@ class Connection(object):
         peer is not compatible with MIN_PROTOCOL_VERSION and MAX_PROTOCOL_VERSION.
     
         """
+        
         version = self.getProtocolVersion()
         version = float(version)
         

@@ -315,11 +315,11 @@ class MySQLGlue (Connection):
 		self.unbuffered = unbuffered
 	
 	
-	def mysql_connect( self, server, username, password, db ):
+	def mysql_connect( self, server, username, password, db, port = 3306 ): 
 		#FIXME: connection charset, etc!
 		
 		#try:
-		self.connection = MySQLdb.connect(host=server, user=username, passwd=password, db = db) 
+		self.connection = MySQLdb.connect(host=server, user=username, passwd=password, db = db, port = port) 
 		
 		#XXX: would be nice to wrap the exception and provide additional info. 
 		#	 but without exception chaining, we lose the traceback. wich is bad.
