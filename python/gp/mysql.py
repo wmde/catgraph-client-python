@@ -580,7 +580,7 @@ class MySQLGlue (Connection):
 	def mysql_query_value (self, sql ):
 		r = self.mysql_query_record( sql )
 		
-		if ( not 1 ): return None
+		if not r: return None
 		else: return r[0]
 	
 	def mysql_query_record (self, sql ):
