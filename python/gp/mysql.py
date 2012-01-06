@@ -569,6 +569,13 @@ class MySQLGlue (Connection):
 		
 		return MySQLTable(table, spec.get_fields())
 	
+	def mysql_select_db ( self, db ):
+		#NOTE: the native select_db "sometimes" triggers an InterfaceError. 
+		#      This is a strange issue with MySQLdb
+		
+		sql = "USE %s" % re.sub('[^\w]', '', db) #TODO: apply real identifier quoting!
+		
+		self.mysql_update( sql )
 
 	def mysql_query_value (self, sql ):
 		r = self.mysql_query_record( sql )
