@@ -183,14 +183,16 @@ class PageSet :
         
     
     
-    def _query( self, sql ) :
-        if ( self.big ): return self.glue.mysql_unbuffered_query(sql)
-        else: return self.glue.mysql_query(sql)
+    def _query( self, sql, **kwargs ) :
+        if not 'unbuffered' in kwargs:
+            kwargs['unbuffered'] = self.big
+        
+        return self.glue.mysql_query(sql, **kwargs) #TODO: port kwargs to PHP
     
-    def _update( self, sql ) : #TODO: port to PHP; use in PHP!
-        return self.glue.mysql_update(sql)
+    def _update( self, sql, **kwargs ) : #TODO: port to PHP; use in PHP!
+        return self.glue.mysql_update(sql, **kwargs)
     
-    def add_from_select ( self, select ) :
+    def add_from_select ( self, select, comment = None ) :
         sql= "REPLACE INTO " + self.table + " "
         sql += "( "
         sql += self.id_field + ", "
@@ -198,25 +200,25 @@ class PageSet :
         sql += self.title_field + " ) "
         sql += select
         
-        return self._update( sql )
+        return self._update( sql, comment = comment )
     
     
-    def delete_where ( self, where ) :
+    def delete_where ( self, where, comment = None ) :
         sql= "DELETE FROM " + self.table + " "
         sql += where
         
-        return self._update( sql )
+        return self._update( sql, comment = comment )
     
     
-    def delete_using ( self, using, tableAlias = "T" ) :
+    def delete_using ( self, using, tableAlias = "T", comment = None ) :
         sql= "DELETE FROM " + tableAlias + " "
         sql += "USING " + self.table + " AS " + tableAlias + " "
         sql += using
         
-        return self._update( sql )
+        return self._update( sql, comment = comment )
     
     
-    def resolve_ids ( self, ) :
+    def resolve_ids ( self, comment = None ) :
         #NOTE: MySQL can't perform self-joins on temp tables. so we need to copy the ids to another temp table first.
         t = MySQLTable("?", "page_id")
         t.add_key_definition("PRIMARY KEY (page_id)")
@@ -234,7 +236,7 @@ class PageSet :
         sql += " FROM " + self.glue.wiki_table("page") + " AS P "
         sql += " JOIN " + tmp.get_name() + " AS T ON T.page_id = P.page_id"
         
-        self.add_from_select( sql )
+        self.add_from_select( sql, comment = comment ) #TODO: port comment to PHP
         
         self.glue.drop_temp_table( tmp )
         return True
@@ -430,7 +432,7 @@ class PageSet :
         return True
     
     
-    def expand_categories ( self, ns = None ) :
+    def expand_categories ( self, ns = None, comment = None ) :
         #NOTE: MySQL can't perform self-joins on temp tables. so we need to copy the category names to another temp table first.
         t = MySQLTable("?", "cat_title")
         t.set_field_definition("cat_title", "VARCHAR(255) BINARY NOT NULL")
@@ -460,7 +462,7 @@ class PageSet :
         
     
         #self.glue.dump_query(sql)
-        self.add_from_select( sql )
+        self.add_from_select( sql, comment = comment ) #TODO: port comment to PHP
         
         #self.glue.dump_query("select * from " +self.table)
         self.glue.drop_temp_table( tmp )
@@ -501,19 +503,19 @@ class PageSet :
         
         return row[0]
     
-    def add_pages_in ( self, cat, ns, depth ) :
+    def add_pages_in ( self, cat, ns, depth, comment = None ) :
         self.get_size()
         
         if ( not self.add_subcategories(cat, depth) ): 
             return False
 
-        self.get_size()
+        self.get_size() # ?!
 
-        self.expand_categories(ns)
+        self.expand_categories(ns, comment = comment)
         return True
     
 
-    def add_pages_transclusing ( self, tag, ns = None ) :
+    def add_pages_transclusing ( self, tag, ns = None, comment = None ) :
         if ( ns is None ): ns = NS_TEMPLATE
         tag = self.glue.get_db_key( tag )
 
@@ -524,7 +526,7 @@ class PageSet :
         sql += " WHERE tl_namespace = %i" % int(ns)
         sql += " AND tl_title = " + self.glue.quote_string(tag)
         
-        return self.add_from_select(sql)
+        return self.add_from_select(sql, comment = comment)
     
 
     def clear ( self, ) :
