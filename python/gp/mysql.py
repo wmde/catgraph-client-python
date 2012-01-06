@@ -481,15 +481,15 @@ class MySQLGlue (Connection):
 	def __make_mysql_closure( self, name ):
 		rc = False
 		
-		if not self.connection:
-			raise gpUsageException( "not connected to mysql, can't run mysql function %s" % (name,) )
-			
-		if not hasattr(self.connection, name):
-			raise gpUsageException( "unknown mysql function: %s, not in %s" % (name, self.connection.__class__.__name__) )
-			
-		f = getattr(self.connection, name)
-		
 		def call_mysql( *args ):
+			if not self.connection:
+				raise gpUsageException( "not connected to mysql, can't run mysql function %s" % (name,) )
+				
+			if not hasattr(self.connection, name):
+				raise gpUsageException( "unknown mysql function: %s, not in %s" % (name, self.connection.__class__.__name__) )
+				
+			f = getattr(self.connection, name)
+			
 			#try:
 			res = f( *args ) # note: f is bound to self.connection
 			return res
