@@ -213,7 +213,7 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 		
 		//-----------------------------------------------------------
 		$set->clear();
-		$ok = $set->add_pages_in("topics", null, 5);
+		$ok = $set->add_pages_in("topics", 5);
 		$this->assertTrue( $ok );
 		
 		$a = $set->capture();
@@ -229,31 +229,13 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 
 		//-----------------------------------------------------------
 		$set->clear();
-		$ok = $set->add_pages_in("topics", null, 5);
+		$ok = $set->add_pages_in("topics", 5);
 		$this->assertTrue( $ok );
 		
 		$a = $set->capture( NS_MAIN );
         $this->assertEquals(array(array(1111, NS_MAIN, "Lager"), 
 									array(1112, NS_MAIN, "Pils"), 
 									array(1122, NS_MAIN, "Toe_Cheese")), $a );
-
-		//-----------------------------------------------------------
-		$set->clear();
-		$ok = $set->add_pages_in("Portals", NS_MAIN, 5);
-		$this->assertTrue( $ok );
-		
-		$a = $set->capture();
-        $this->assertEquals(array(array(1, NS_MAIN, "Main_Page"),
-									array(20, NS_CATEGORY, "Portals")), $a );
-
-		//-----------------------------------------------------------
-		$set->clear();
-		$ok = $set->add_pages_in("portals", array(NS_MAIN, NS_PROJECT), 5);
-		$this->assertTrue( $ok );
-		
-		$a = $set->capture( array(NS_MAIN, NS_PROJECT) );
-        $this->assertEquals(array(array(1, NS_MAIN, "Main_Page"), 
-									array(2, NS_PROJECT, "Help_Out")), $a );
 
         //-----------------------------------------------------------
         $set->dispose();
@@ -269,7 +251,7 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 		
 		//-----------------------------------------------------------
 		$set->clear();
-		$ok = $set->add_pages_in("topics", null, 5);
+		$ok = $set->add_pages_in("topics", 5);
 		$this->assertTrue( $ok );
 		
 		$a = $set->capture();
@@ -298,8 +280,8 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 		$rset->create_table();
 		
 		//-----------------------------------------------------------
-		$ok = $set->add_pages_in("topics", null, 5);
-		$ok = $rset->add_pages_in("Maintenance", null, 5);
+		$ok = $set->add_pages_in("topics", 5);
+		$ok = $rset->add_pages_in("Maintenance", 5);
 
 		$ok = $set->subtract_page_set( $rset );
 		$this->assertTrue( $ok );
@@ -329,8 +311,8 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 		$rset->create_table();
 		
 		//-----------------------------------------------------------
-		$ok = $set->add_pages_in("topics", null, 5);
-		$ok = $rset->add_pages_in("Maintenance", null, 5);
+		$ok = $set->add_pages_in("topics", 5);
+		$ok = $rset->add_pages_in("Maintenance", 5);
 
 		$ok = $set->retain_page_set( $rset );
 		$this->assertTrue( $ok );
@@ -357,8 +339,8 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 		$cheese->create_table();
 		
 		//-----------------------------------------------------------
-		$ok = $cheese->add_pages_in("Cheese", null, 5);
-		$ok = $beer->add_pages_in("Beer", null, 5);
+		$ok = $cheese->add_pages_in("Cheese", 5);
+		$ok = $beer->add_pages_in("Beer", 5);
 
 		$ok = $cheese->add_page_set( $beer );
 		$this->assertTrue( $ok );
@@ -385,7 +367,7 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 		$set = new gpPageSet($this->gp);
 		$set->create_table();
 		
-		$set->add_pages_in("topics", null, 5);
+		$set->add_pages_in("topics", 5);
 		
 		//-----------------------------------------------------------
 		$set->strip( "page_namespace = " . NS_CATEGORY );
@@ -413,7 +395,7 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 		
 		//-----------------------------------------------------------
 		$set->clear();
-		$set->add_pages_in("topics", null, 5);
+		$set->add_pages_in("topics", 5);
 		$set->strip_namespace( NS_CATEGORY );
 		
 		$a = $set->capture();
@@ -425,7 +407,7 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 		
 		//-----------------------------------------------------------
 		$set->clear();
-		$set->add_pages_in("Portals", null, 5);
+		$set->add_pages_in("Portals", 5);
 		$set->strip_namespace( array(NS_CATEGORY, NS_PROJECT) );
 		
 		$a = $set->capture();
@@ -446,7 +428,7 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 		
 		//-----------------------------------------------------------
 		$set->clear();
-		$set->add_pages_in("topics", null, 5);
+		$set->add_pages_in("topics", 5);
 		$set->retain_namespace( array(NS_MAIN) );
 		
 		$a = $set->capture();
@@ -458,7 +440,7 @@ class gpMediaWikiTest extends gpSlaveTestBase {
 		
 		//-----------------------------------------------------------
 		$set->clear();
-		$set->add_pages_in("Portals", null, 5);
+		$set->add_pages_in("Portals", 5);
 		$set->retain_namespace( NS_MAIN );
 		
 		$a = $set->capture();

@@ -246,6 +246,20 @@ class gpPageSet {
 		
 		$this->table_id_obj = new gpMySQLTable( $this->table, $this->id_field );
 		$this->table_id_obj->add_key_definition( "PRIMARY KEY (" . $this->id_field . ")" );
+		
+		$this->has_titles = true; #TODO: port to python
+		$this->has_category_names = true; #TODO: port to python
+	}
+	
+	public function set_has_titles( $has ) { #TODO: port to python
+		$this->has_titles = $has;
+		$this->has_category_names = $has;
+	}
+	
+	public function set_has_category_names( $has ) { #TODO: port to python 
+		$this->has_category_names = $has;
+		
+		if (!$has) $this->has_titles = $has;
 	}
 	
 	public function set_expect_big( $big ) {
@@ -283,6 +297,18 @@ class gpPageSet {
 		return $this->query( $sql );
 	} 
 	
+	public function add_ids_from_select( $select ) { #TODO: port to python
+		$sql= "REPLACE INTO " . $this->table ." ";
+		$sql .= "( ";
+		$sql .= $this->id_field . " ) ";
+		$sql .= $select;
+		
+		$ok = $this->query( $sql );
+		if ( $ok ) $this->set_has_titles( false ); #TODO: port to python
+		
+		return $ok;
+	} 
+	
 	#TODO: kill delete_where() from python, superceded by strip/retain
 	#TODO: kill delete_using() from python, superceded by strip/retain
 
@@ -307,6 +333,8 @@ class gpPageSet {
 		$this->add_from_select( $sql );
 		
 		$this->glue->drop_temp_table( $tmp );  
+
+		$this->set_has_titles( true ); #TODO: port to python
 		return true;
 	}
 
@@ -317,14 +345,28 @@ class gpPageSet {
 
 	public function make_id_sink() {
 		$sink = $this->glue->make_sink( $this->table_id_obj, true );
+
+		$this->set_has_titles( false ); #TODO: port to python
 		return $sink;
 	}
 
 	public function make_id_source( $ns = null ) {
 		return $this->make_source( $ns, true );
 	}
+	
+	public function assert_has_titles( $ns = null ) { #TODO: port this to python
+		if ( $ns === NS_CATEGORY ) {
+			if ( !$this->has_category_names ) throw new gpUsageException("page titles are not known, call resolve_ids() first");
+		} else {
+			if ( !$this->has_titles ) throw new gpUsageException("page titles are not known, call resolve_ids() first");
+		}
+	}
 
 	public function make_source( $ns = null, $ids_only = false ) {
+		if ( !$ids_only ) { #TODO: port this check to python
+			$this->assert_has_titles($ns);
+		}
+		
 		$t = $ids_only ? $this->table_id_obj : $this->table_obj;
 		
 		if ( $ns !== null ) {
@@ -362,14 +404,19 @@ class gpPageSet {
 		return $this->glue->copy($src, $sink, "~");
 	}
 
-	public function add_source( $src ) {
+	public function add_source( $src ) { #requires titles in source
 		$sink = $this->make_sink();
 		return $this->glue->copy( $src, $sink, "+" );
 	}
 
 	public function add_page_set( $set ) {
-		$select = $set->get_table()->get_select();
-		return $this->add_from_select( $select );
+		if ( $set->has_titles ) {
+			$select = $set->get_table()->get_select();
+			return $this->add_from_select( $select );
+		} else {
+			$select = "SELECT " . $set->id_field . " FROM " . $set->get_table()->get_name();
+			return $this->add_ids_from_select( $select );
+		}
 	}
 
 	public function subtract_page_set( $set ) {
@@ -472,6 +519,8 @@ class gpPageSet {
 	}
 
 	public function strip_namespace( $ns, $inverse = false ) {
+		$this->assert_has_titles($ns);
+		
 		$where = array( $this->namespace_field => $ns );
 		return $this->strip( $where, null, $inverse );
 	}
@@ -513,6 +562,10 @@ class gpPageSet {
 	}
 
 	public function strip_modified_since( $timestamp ) { #TODO: port to python!
+		#TODO: normalize $timestamp
+	
+		$this->assert_has_titles();
+		
 		$where = 'rc_timestamp >= ' . $this->glue->quote_string($timestamp);
 		
 		$join = array(
@@ -528,6 +581,8 @@ class gpPageSet {
 	public function retain_modified_since( $timestamp ) { #TODO: port to python!
 		#TODO: normalize $timestamp
 	
+		$this->assert_has_titles();
+
 		$join = 'LEFT JOIN ' . $this->glue->wiki_table('recentchanges');
 		$join .= ' ON rc_namespace = ' . $this->namespace_field #literals not assumed: used as a field name, not a string value
 			. ' AND rc_title = ' . $this->title_field #literals not assumed: used as a field name, not a string value
@@ -594,7 +649,9 @@ class gpPageSet {
 		return $this->strip_by_creation( $timestamp, '<=' );
 	}
 
-	public function strip( $where, $join = null, $inverse = false ) { #TODO: port to python!
+	public function strip( $where, $join = null, $inverse = false ) { #TODO: port to python! 
+		#WARNING: called has to check for has_titles if required!
+		
 		if ( $where ) $where = $this->glue->condition_sql($where, true, $inverse);
 
 		if ( is_array($join) ) {
@@ -656,10 +713,15 @@ class gpPageSet {
 		$sql .= $this->glue->as_list($values);
 		
 		$this->query( $sql );
+		
+		$this->set_has_titles(false); #TODO: port to python
 		return true;
 	}
 	
-	public function expand_categories( $ns = null ) {
+	public function expand_categories( ) { #TODO: port to python: no namespace filter here.
+		//NOTE: we need category titles! we could resolve ids for categories only, maybe.
+		$this->resolve_ids();
+	
 		//NOTE: MySQL can't perform self-joins on temp tables. so we need to copy the category names to another temp table first.
 		$t = new gpMySQLTable("?", "cat_title");
 		$t->set_field_definition("cat_title", "VARCHAR(255) BINARY NOT NULL");
@@ -676,33 +738,22 @@ class gpPageSet {
 		#$this->glue->dump_query("select * from ".$tmp->get_name());
 		
 		// ----------------------------------------------------------
-		$sql = "select P.page_id, P.page_namespace, P.page_title ";
-		$sql .= " from " . $this->glue->wiki_table( "page" ) . " as P ";
-		$sql .= " join " . $this->glue->wiki_table( "categorylinks" ) . " as X ";
-		$sql .= " on X.cl_from = P.page_id ";
+		$sql = "select X.cl_from as page_id ";
+		$sql .= " from " . $this->glue->wiki_table( "categorylinks" ) . " as X ";
 		$sql .= " join " . $tmp->get_name() . " as T ";
 		$sql .= " on T.cat_title = X.cl_to ";
 		
-		if ($ns !== null) {
-			if ( is_array($ns) ) $sql .= " where P.page_namespace in " . $this->glue->as_list( $ns ); 
-			else $sql .= " where P.page_namespace = " . (int)$ns; 
-		}
-	
 		#$this->glue->dump_query($sql);
-		$this->add_from_select( $sql );
+		$this->add_ids_from_select( $sql );
 		
 		#$this->glue->dump_query("select * from ".$this->table);
 		$this->glue->drop_temp_table( $tmp );
+		
+		$this->set_has_titles(false); #TODO: port to python
 		return true;
 	}
 	
-	public function add_subcategories( $cat, $depth, $without = null, $without_depth = null ) {
-		$this->add_subcategory_ids($cat, $depth, $without, $without_depth);
-		$this->resolve_ids();
-		return true;
-	}
-	
-	protected function add_subcategory_ids( $cat, $depth, $without = null, $without_depth = null ) {
+	public function add_subcategories( $cat, $depth, $without = null, $without_depth = null ) { #TODO: port to python: ids only, no titles
 		$id = $this->glue->get_page_id( NS_CATEGORY, $cat );
 		if ( !$id ) return false;
 		
@@ -719,13 +770,15 @@ class gpPageSet {
 		}
 		
 		$sink->close();
+
+		$this->set_has_titles(false); #TODO: port to python
 		return true;
 	}
 	
-	public function add_pages_in( $cat, $ns, $depth ) {
+	public function add_pages_in( $cat, $depth ) { #TODO: port to python: no ns filter here! adds ids only!
 		if ( !$this->add_subcategories($cat, $depth) ) return false;
 
-		$this->expand_categories($ns);
+		$this->expand_categories();
 		return true;
 	}
 
@@ -733,19 +786,22 @@ class gpPageSet {
 		if ( $ns === null ) $ns = NS_TEMPLATE;
 		$tag = $this->glue->get_db_key( $tag );
 
-		$sql = " SELECT page_id, page_namespace, page_title ";
-		$sql .= " FROM " . $this->glue->wiki_table( "page" );
-		$sql .= " JOIN " . $this->glue->wiki_table( "templatelinks" );
-		$sql .= " ON tl_from = page_id ";
+		$sql = " SELECT tl_from ";
+		$sql .= " FROM " . $this->glue->wiki_table( "templatelinks" );
 		$sql .= " WHERE tl_namespace = " . (int)$ns;
 		$sql .= " AND tl_title = " . $this->glue->quote_string($tag);
 		
-		return $this->add_from_select($sql);
+		$ok = $this->add_ids_from_select($sql);
+		
+		$this->set_has_titles(false); #TODO: port to python
+		return $ok;
 	}
 
 	public function clear() {
 		$sql = "TRUNCATE " . $this->table;
 		$this->query($sql);
+
+		$this->set_has_titles(true); #TODO: port to python
 		return true;
 	}
 
