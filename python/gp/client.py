@@ -203,8 +203,9 @@ class ArraySource( DataSource ):
     def __init__( self, data ):  
         """ Initializes a ArraySource from the table contained in data.
    
-        @param data: an array of indexed arrays, each representing a
-               row in the data source.
+        @param data: a list of lists or tuples, each representing a
+               row in the data source. If the list contains integers
+               or strings, they are wrapped and returned as one-tuples.
 
         """
         self.data = data
@@ -212,7 +213,7 @@ class ArraySource( DataSource ):
         self.index = 0
          
     def next( self ):
-        """Return the next row of the array provided to the constructor."""
+        """Return the next row of the list provided to the constructor."""
         if self.index < self.data_length:
             row = self.data[self.index]
             self.index = self.index + 1
@@ -229,13 +230,56 @@ class ArraySource( DataSource ):
     def makeSink(self):
         """Returns a new instance of ArraySink.
 
-        The sink can be used to write to and to fill the data array of
+        The sink can be used to write to and to fill the data list of
         this ArraySource.
    
         """ 
         return ArraySink(self.data)
      
 
+class LimitedSource( DataSource ): #TODO: PORT to PHP
+    """A data source that wraps another data source to limit the number
+    of rows returned from it.
+
+    This is useful to limit the number of arcs transmitted graphserv in
+    a single command.
+    """
+
+    def __init__( self, src, limit ):  
+        """ Initializes a LimitedSource using the given original data source.
+   
+        @param src: a DataSource object
+        @param limit: the number of rows to return.
+        """
+        
+        self.source = src
+        self.limit = limit
+        self.index = 0
+         
+    def next( self ):
+
+        """Return the next row of the DataSource provided to the constructor."""
+        
+        if self.index < self.limit:
+            row = self.source.next()
+            self.index = self.index + 1
+            
+            return row
+        else:
+            raise StopIteration()
+            
+    def limit_reached( self ):
+        """ returns True if next() has already been called sucessfully as many times
+            as allowed by the limit parameter passed to the constructor. After
+            iterating over this LimitedSource instance (i.e. after StopIteration()
+            has been thrown by next()), this method may be used to determine
+            whether there may be more data in the original data source. If 
+            iteration was terminated but limit_reached() returns false, then the
+            original source was depleted and there is no more data available from it.
+        """
+        
+        return ( self.index >= self.limit )
+ 
 class PipeSource( DataSource ):
     """Data source based on a file handle.
 
