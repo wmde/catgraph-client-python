@@ -256,7 +256,7 @@ class PageSet :
         return self.make_source( ns, True )
     
 
-    def make_source ( self, ns = None, ids_only = False ) :
+    def make_source ( self, ns = None, ids_only = False, auto_order = False ) : #TODO: PORT auto_order to PHP
         t = self.table_id_obj if ids_only else self.table_obj
         
         if ( ns is not None ) :
@@ -268,7 +268,7 @@ class PageSet :
             t = MySQLSelect(select)
         
         
-        src = self.glue.make_source( t, self.big )
+        src = self.glue.make_source( t, big = self.big, auto_order = auto_order )
         return src
     
 

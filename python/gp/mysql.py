@@ -660,10 +660,10 @@ class MySQLGlue (Connection):
         return sink
     
 
-    def make_source (self, table, big = False, **kwargs ):
+    def make_source (self, table, big = False, auto_order = False, **kwargs ): #TODO: PORT auto_order to PHP
         sql = table._get_select()
         
-        if not re.search(r'\s+ORDER\s+BY\s+', sql, flags = re.IGNORECASE | re.DOTALL ) :
+        if auto_order and not re.search(r'\s+ORDER\s+BY\s+', sql, flags = re.IGNORECASE | re.DOTALL ) : #TODO: PORT auto_order to PHP
             sql += ' ' + table.get_order_by()
         
         if not 'unbuffered' in kwargs:
