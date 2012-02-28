@@ -620,8 +620,8 @@ class gpPageSet {
 		return $this->strip_by_size( $size, '>=' );
 	}
 
-	public function strip_by_creation( $timestamp, $op ) { #TODO: port to python!
-		$where = 'rev_timestamp ' . $op . ' ' . (int)$timestamp;
+	protected function strip_by_creation( $timestamp, $op ) { #TODO: port to python!
+		$where = 'rev_timestamp ' . $op . ' ' . $this->glue->quote_string($timestamp);
 		
 		$join = array(
 			'revision' => array('rev_page' => $this->id_field,
