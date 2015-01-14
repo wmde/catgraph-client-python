@@ -838,9 +838,9 @@ class ClientTransport(PipeTransport):
         try:
             if self.socktimeout: self.socket.settimeout(self.socktimeout)
             self.socket.connect((self.host, self.port))
-        except socket.error as (value, message):
+        except socket.error as ex:
             raise gpProtocolException(
-              "failed to connect to %s:%s: %s %s" % (self.host, self.port, value, message) )
+              "failed to connect to %s:%s: %s" % (self.host, self.port, str(ex)) )
         
         self.hin = self.socket.makefile("r")
         self.hout = self.socket.makefile("w")
