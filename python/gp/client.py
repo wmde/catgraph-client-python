@@ -803,7 +803,7 @@ class ClientTransport(PipeTransport):
     @var socket = False
     """
     
-    def __init__(self, host='localhost', port=PORT): #OK
+    def __init__(self, host='localhost', port=PORT, socktimeout=30): #OK
         """Initialize a new instance of ClientTransport.
 
         Responsable for a connection with GraphServ.
@@ -818,6 +818,8 @@ class ClientTransport(PipeTransport):
         self.host = host
         #FIXME: PORT removal of self.graphname to php
         self.socket = False
+        # XXXX socktimeout might not be available in the PHP version
+        self.socktimeout= socktimeout
         PipeTransport.__init__(self)
          
     def connect(self):
@@ -834,8 +836,8 @@ class ClientTransport(PipeTransport):
         """
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
+            if self.socktimeout: self.socket.settimeout(self.socktimeout)
             self.socket.connect((self.host, self.port))
-            #XXX: configure timeout?
         except socket.error as (value, message):
             raise gpProtocolException(
               "failed to connect to %s:%s: %s %s" % (self.host, self.port, value, message) )
