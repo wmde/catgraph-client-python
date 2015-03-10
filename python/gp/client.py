@@ -2068,7 +2068,7 @@ class Connection(object):
         """
         return Connection(SlaveTransport(command, cwd, env))
 
-def array_column(a, col):
+def extract_array_column(a, col):
     """Extracts a column from a tabular structure
  
     @type a:  list/tuple

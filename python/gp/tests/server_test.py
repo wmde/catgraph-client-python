@@ -125,7 +125,7 @@ class ServerTest (ClientTestBase, unittest.TestCase):
 
         gp2 = self.newConnection()
         graphs = gp2.capture_list_graphs()
-        graphs = array_column(graphs, 0)
+        graphs = extract_array_column(graphs, 0)
         self.assertTrue( test_graph_name in graphs,
           "test table test_graph_name should be in the list" )
 
@@ -133,7 +133,7 @@ class ServerTest (ClientTestBase, unittest.TestCase):
         graphs = gp2.capture_list_graphs()
         #print "graphs: " . var_export($graphs, true) . "\n"
 
-        graphs = array_column( graphs, 0 )
+        graphs = extract_array_column( graphs, 0 )
 
         #print "graphs: " . var_export($graphs, true) . "\n"
 

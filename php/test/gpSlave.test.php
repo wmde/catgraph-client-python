@@ -47,7 +47,7 @@ class gpSlaveTest extends gpSlaveTestBase
 		$this->assertNotNull( $a );
 		$this->assertType( 'array', $a );
 		
-		$a = array_column( $a, 0 );
+		$a = extract_array_column( $a, 0 );
 		$this->assertEquals( array(11, 12), $a, "unexpected response for list_successors(1): " . var_export($a, true) );
 
 		// two column data

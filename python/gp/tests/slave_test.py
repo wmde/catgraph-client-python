@@ -50,7 +50,7 @@ class SlaveTest (SlaveTestBase, unittest.TestCase):
         self.assertNotNone( a )
         self.assertIsInstance(a, (list,tuple))
         
-        a = array_column( a, 0 )
+        a = extract_array_column( a, 0 )
         self.assertEquals( [11, 12], a,
           "unexpected response for list_successors(1): %s" % a )
         

@@ -1792,7 +1792,7 @@ class gpConnection {
  * 
  * @return an array consisting of the values of column $col from each row in $a
  */
-function array_column($a, $col) {
+function extract_array_column($a, $col) {
 	$column = array();
 	
 	foreach ( $a as $k => $x ) {

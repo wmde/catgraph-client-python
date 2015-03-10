@@ -120,14 +120,14 @@ class gpServerTest extends gpClientTestBase
 		$gp2 = $this->newConnection();
 		
 		$graphs = $gp2->capture_list_graphs();
-		$graphs = array_column( $graphs, 0 );
+		$graphs = extract_array_column( $graphs, 0 );
 		$this->assertTrue( in_array( $gpTestGraphName, $graphs ), "test table $gpTestGraphName should be in the list" );
 		
 		$this->gp->drop_graph($gpTestGraphName);
 		$graphs = $gp2->capture_list_graphs();
 		#print "graphs: " . var_export($graphs, true) . "\n";
 		
-		$graphs = array_column( $graphs, 0 );
+		$graphs = extract_array_column( $graphs, 0 );
 		
 		#print "graphs: " . var_export($graphs, true) . "\n";
 		
