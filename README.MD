@@ -1,4 +1,5 @@
-Graph Processor Client Library by Daniel Kinzler
+# Graph Processor Python Client Library
+by Daniel Kinzler
 Translated from PHP to Python by Philipp Zedler
 Copyright (c) 2011 by Wikimedia Deutschland e.V.
 All rights reserved.
@@ -34,3 +35,6 @@ is a Python interface to a GraphServ or GraphCore instance.
 @author Philipp Zedler <zedler@itp.tu-berlin.de> (translation)
 @copyright 2011, Wikimedia Deutschland
 @package WikiTalk #? Stimmt das?
+
+## Issue tracker
+Please file bugs and feature requests on [Phabricator] (https://phabricator.wikimedia.org/maniphest/task/create/?projects=tcb-team,catgraph&title=%5BCatGraph%5D).
